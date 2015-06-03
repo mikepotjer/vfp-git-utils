@@ -18,7 +18,19 @@ The following items are required to take full advantage of the Git utilities:
    Command Prompt".  
  - Windows Scripting Host - This is installed as part of Windows, but system administrators will
    sometimes disable it on the PCs on their networks.  
- 
+
+#### Getting Started with Git
+
+If you are new to Git, I've created a
+[setup guide](https://drive.google.com/file/d/0B1GXcfuc1fBubFpUS2VmSVNpUEk/view?usp=sharing)
+for getting started with Git.  This guide includes:  
+
+ - some basic instructions for installing Git and some useful third-party tools
+ - some tips on configuring Git and the tools
+ - information on SSH keys
+ - a list of resources, including documentation, articles, and links to Git and all the tools
+   referenced  
+
 ### Installation
 
 Installation is simple.  Just copy the include file (.h) and the .PRG files into the `My Tools` folder
