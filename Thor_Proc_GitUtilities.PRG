@@ -507,6 +507,81 @@ RETURN m.llHasChanges
 ENDFUNC
 
 *********************************************************************
+FUNCTION FetchRepoFileList
+
+*!*	This method returns a cursor containing a list of all the files committed to the specified (or
+*!*	current) Git repository.
+
+*!*	PARAMETERS:
+*!*		  toErrorInfo (O) -	A variable passed by reference to store any error info returned from
+*!*							this method.  This will be returned as an Exception object.  This
+*!*							parameter is not required, but recommended.
+*!*		 tcRepository (O) -	The full path to the repository folder whose list of tracked files is
+*!*							to be retrieved.  If omitted, the current folder will be used as the
+*!*							repository.
+*!*		tcCursorName (O) -	The name to use for the cursor that returns the file list for the
+*!*							repository.  It is not required to specify a cursor name, but if no
+*!*							name is specified, a variable should be passed here by reference to
+*!*							receive the name of the cursor generated.
+
+*!*	RETURNS: Logical
+*!*		Returns true if the file list for the repository can be successfully retrieved, otherwise
+*!*		returns .F.
+*********************************************************************
+LPARAMETERS toErrorInfo AS Exception, tcRepository AS String, tcCursorName AS String
+
+LOCAL laLines[1], ;
+	lcFileExtension, ;
+	llSuccess, ;
+	xx
+
+tcCursorName = IIF( VARTYPE( m.tcCursorName ) = "C" AND NOT EMPTY( m.tcCursorName ), ;
+		ALLTRIM( m.tcCursorName ), "C_GitRepoFileList" )
+USE IN SELECT( m.tcCursorName )
+
+*-- Generate the cursor used to store the file list.  The fields are
+*-- defined as follows:
+*--		GL_FileName		  -	The name of the file as currently defined in the repository.
+*--		GL_FileExtension  -	The extension for the file.  For file names where there is no stem,
+*--							such as .GitIgnore, this field will be left blank.
+CREATE CURSOR ( m.tcCursorName ) ;
+	( GL_FileName V(254), ;
+		GL_FileExtension C(10) )
+
+*-- Retrieve the git repo file list.
+llSuccess = This.GetRepoFileList( @m.toErrorInfo, m.tcRepository, @laLines )
+
+*-- If the list command failed, or there are no files in the list somehow,
+*-- then there's nothing more to do here.
+IF NOT m.llSuccess ;
+		OR ISNULL( laLines[1] )
+	RETURN m.llSuccess
+ENDIF
+
+FOR xx = 1 TO ALEN( laLines, 1 )
+	*-- Determine the file extension to report.
+	IF EMPTY( JUSTSTEM( laLines[m.xx] ) )
+		*-- The file name has no stem, so assume it is a system
+		*-- file, like .GitIgnore, and don't save an extension.
+		lcFileExtension = SPACE(0)
+	ELSE
+		*-- The file name has a stem, so save the extension, if it has
+		*-- one.
+		lcFileExtension = UPPER( JUSTEXT( laLines[m.xx] ) )
+	ENDIF
+
+	INSERT INTO ( m.tcCursorName ) ;
+		( GL_FileName, ;
+			GL_FileExtension ) ;
+		VALUES ;
+		( laLines[m.xx], ;
+			m.lcFileExtension )
+ENDFOR
+
+RETURN m.llSuccess
+ENDFUNC
+
+*********************************************************************
 FUNCTION FetchRepoStatus
 
 *!*	This method returns a cursor containing status information about the specified (or current)
@@ -525,7 +600,8 @@ FUNCTION FetchRepoStatus
 *!*							receive the name of the cursor generated.
 
 *!*	RETURNS: Logical
-*!*		Returns true if status of the repository can be successfully determined, otherwise returns .F.
+*!*		Returns true if the status of the repository can be successfully determined, otherwise
+*!*		returns .F.
 *********************************************************************
 LPARAMETERS toErrorInfo AS Exception, tcRepository AS String, tcCursorName AS String
 
@@ -884,7 +960,7 @@ IF m.llHasChanges
 		WAIT WINDOW m.lcMessage + m.lcRelativeFileName NOWAIT NOCLEAR
 
 		*{ MJP -- 04/21/2015 10:56:32 AM - Begin
-		IF NOT This.ConvertBinaryFileToText( @m.toErrorInfo, m.lcFullFileName, m.lcRepository )
+		IF NOT This.ConvertVFPFile( @m.toErrorInfo, m.lcFullFileName, m.lcRepository )
 			llSuccess = .F.
 			EXIT
 		ENDIF
@@ -1201,7 +1277,7 @@ IF _VFP.Projects.Count > 0
 ENDIF
 
 *-- Generate the text file for the project.
-llSuccess = This.ConvertBinaryFileToText( @m.toErrorInfo, m.lcProjectName )
+llSuccess = This.ConvertVFPFile( @m.toErrorInfo, m.lcProjectName )
 
 *-- If the project was open, re-open it.
 IF m.llProjectOpen
@@ -2047,6 +2123,445 @@ RETURN m.llSuccess
 ENDFUNC
 
 *********************************************************************
+FUNCTION PostCheckoutProcessProject
+
+*!*	This method performs the synchronization processes typically needed after checking out a branch
+*!*	of a repository, but performs it for all repositories represented in the specified project.
+
+*!*	PARAMETERS:
+*!*		  toErrorInfo (O) -	A variable passed by reference to store any error info returned from
+*!*							this method.  This will be returned as an Exception object.  This
+*!*							parameter is not required, but recommended.
+*!*		tcProjectName (O) -	The project for which to process repository files after checkouts for
+*!*							the project repositories.  If omitted, the project to process will be
+*!*							determined by This.GetProjectName().
+
+*!*	RETURNS: Logical
+*!*		.T. if processing is successful, .F. if an error occurs.
+*********************************************************************
+LPARAMETERS toErrorInfo AS Exception, tcProjectName AS String
+
+LOCAL lcRepoListAlias, ;
+	llSuccess
+
+llSuccess = .T.
+
+*-- Get a list of the repositories for the project.
+DO CASE
+	CASE NOT This.FetchReposInProject( @m.toErrorInfo, @m.tcProjectName, @m.lcRepoListAlias )
+		*-- An error occurred retrieving the list, so abort.
+		RETURN .F.
+
+	CASE RECCOUNT( m.lcRepoListAlias ) = 0
+		*-- There are no Git repositories for any of the project files,
+		*-- so there's nothing to do.
+		USE IN SELECT( m.lcRepoListAlias )
+		RETURN m.llSuccess
+
+	OTHERWISE
+		*-- There is a list of repositories to process.
+ENDCASE
+
+*-- Process each repository represented in the project.
+SELECT ( m.lcRepoListAlias )
+GO TOP
+SCAN
+	IF NOT This.PostCheckoutProcessRepo( @m.toErrorInfo, PF_GitRepository )
+		llSuccess = .F.
+		EXIT
+	ENDIF
+ENDSCAN
+
+USE IN SELECT( m.lcRepoListAlias )
+
+RETURN m.llSuccess
+ENDFUNC
+
+*********************************************************************
+FUNCTION PostCheckoutProcessRepo
+
+*!*	This method makes sure that files not committed to a repository are synchronized as needed to
+*!*	the files in the repository, something that is frequently needed after a checkout.  This primarily
+*!*	involves regenerating or recompiling certain files.
+
+*!*	PARAMETERS:
+*!*		  toErrorInfo (O) -	A variable passed by reference to store any error info returned from
+*!*							this method.  This will be returned as an Exception object.  This
+*!*							parameter is not required, but recommended.
+*!*		 tcRepository (O) -	The full path to the repository folder to be processed.  If omitted,
+*!*							the current folder will be used as the repository.
+
+*!*	RETURNS: Logical
+*!*		.T. if processing is successful, .F. if an error occurs.
+*********************************************************************
+LPARAMETERS toErrorInfo AS Exception, tcRepository AS String
+
+LOCAL lcFileListAlias, ;
+	llSuccess
+
+*-- Make sure we have a unique name of the file list cursor, and that
+*-- there are no prior instances open with with name.
+lcFileListAlias = "C_GitRepoFileList" + SYS(2015)
+USE IN SELECT( m.lcFileListAlias )
+
+*-- Make sure all .PJX files are in synch with their corresponding
+*-- text file.
+llSuccess = This.RegenerateRepoProjects( @m.toErrorInfo, m.tcRepository, @m.lcFileListAlias )
+
+*-- Make sure the program and object code files for all .MNX menu files
+*-- are updated.
+IF m.llSuccess
+	llSuccess = This.RegenerateRepoMenus( @m.toErrorInfo, m.tcRepository, @m.lcFileListAlias )
+ENDIF
+
+*-- Make sure the object code for all program files is updated.
+IF m.llSuccess
+	llSuccess = This.RecompileRepoProgramFiles( @m.toErrorInfo, m.tcRepository, @m.lcFileListAlias )
+ENDIF
+
+USE IN SELECT( m.lcFileListAlias )
+
+RETURN m.llSuccess
+ENDFUNC
+
+*********************************************************************
+FUNCTION RegenerateRepoProjects
+
+*!*	This method regenerates the .PJX files for any project text files committed to the specified
+*!*	Git repository.  The .PJX/.PJT files for a project are typically not committed to a repository,
+*!*	so this method ensures that those binary files are regenerated to match any text file versions
+*!*	which have been checked out.
+
+*!*	PARAMETERS:
+*!*			  toErrorInfo (O) -	A variable passed by reference to store any error info returned from
+*!*								this method.  This will be returned as an Exception object.  This
+*!*								parameter is not required, but recommended.
+*!*			 tcRepository (O) -	The full path to the repository folder where .PJX files are to be
+*!*								regenerated.  If omitted, the current folder will be used as the
+*!*								repository.
+*!*		  tcFileListAlias (O) -	The alias of the cursor containing a list of all the files in the
+*!*								specified repository.  If omitted or there is no cursor open with
+*!*								the specified name, the file list will be retrieved here, and the
+*!*								cursor name stored in this parameter.  The calling code can delegate
+*!*								the task of retrieving the list to this method by passing a variable
+*!*								to this parameter by reference, then it will have access to the
+*!*								cursor afterward.
+
+*!*	RETURNS: Logical
+*!*		.T. if all .PJX files are successfully regenerated, or if there are no project files to
+*!*		regenerate, .F. if an error occurs.
+*********************************************************************
+LPARAMETERS toErrorInfo AS Exception, tcRepository AS String, tcFileListAlias AS String
+
+LOCAL lcRepository, ;
+	lcTextExtension, ;
+	laFileList[1], ;
+	lcMessage, ;
+	lcFullFileName, ;
+	llProjectOpen, ;
+	loProject AS VisualFoxpro.IFoxProject, ;
+	llSuccess, ;
+	xx
+
+*-- Make sure we have a repository name.
+lcRepository = This.GetRepositoryPath( m.tcRepository )
+
+IF VARTYPE( m.tcFileListAlias ) = "C" ;
+		AND NOT EMPTY( m.tcFileListAlias ) ;
+		AND USED( m.tcFileListAlias )
+	*-- The specified cursor is already open, so use it.
+	llSuccess = .T.
+ELSE
+	*-- Attempt to retrieve the list of files committed to the specified
+	*-- repository.
+	llSuccess = This.FetchRepoFileList( @m.toErrorInfo, m.lcRepository, @m.tcFileListAlias )
+ENDIF
+
+*-- If something failed, or there are no files in this repository,
+*-- there's nothing to do here.
+IF NOT m.llSuccess ;
+		OR RECCOUNT( m.tcFileListAlias ) = 0
+	RETURN m.llSuccess
+ENDIF
+
+*-- Determine the extension used for .PJX files in the current repository.
+*-- Note that although each subfolder could use a different extension,
+*-- we will assume you didn't do anything that crazy, and that the
+*-- correct extension can be determined at the repository root level.
+lcTextExtension = This.GetTextExtension( "PJX", m.lcRepository )
+IF m.lcTextExtension == "PJX"
+	*-- There is no text extension for .PJX files, so either there are
+	*-- no projects in this repository, or you aren't generating text
+	*-- files for them.
+	RETURN m.llSuccess
+ENDIF
+
+*-- Retrieve a list of the text files generated for the .PJX files in
+*-- this repository folder.
+SELECT GL_FileName ;
+	FROM ( m.tcFileListAlias ) ;
+	WHERE UPPER( RTRIM( GL_FileExtension ) ) == m.lcTextExtension ;
+	INTO ARRAY laFileList
+
+*-- There are no text files for .PJX files that are committed to the
+*-- repository, so nothing to do here.
+IF _TALLY = 0
+	RETURN m.llSuccess
+ENDIF
+
+lcMessage = "Regenerating .PJX files for repository:" + CHR(13) ;
+		+ m.lcRepository + CHR(13) ;
+		+ "Regenerating file: "
+
+*-- Regenerate all the project files.
+FOR xx = 1 TO ALEN( laFileList, 1 )
+	WAIT WINDOW m.lcMessage + laFileList[m.xx] NOWAIT NOCLEAR
+
+	*-- Get the full path of the current file.  Note that FULLPATH()
+	*-- normalizes any forward slashes (/) in the path to backslashes
+	*-- (\), which will be important when accessing the Projects collection
+	*-- below.
+	lcFullFileName = FULLPATH( ADDBS( m.lcRepository ) + laFileList[m.xx] )
+
+	llProjectOpen = .F.
+
+	IF _VFP.Projects.Count > 0
+		*-- Check if the specified project is open, because we can't
+		*-- regenerate the project file if it is.
+		TRY
+			loProject = _VFP.Projects.Item( FORCEEXT( m.lcFullFileName, "PJX" ) )
+			llProjectOpen = .T.
+		CATCH
+			loProject = .NULL.
+			llProjectOpen = .F.
+		ENDTRY
+
+		*-- If the project was open, close it.
+		IF NOT ISNULL( m.loProject )
+			loProject.Close()
+			loProject = .NULL.
+		ENDIF
+	ENDIF
+
+	*-- Attempt to regenerate the .PJX file.
+	IF NOT This.ConvertVFPFile( @m.toErrorInfo, m.lcFullFileName, m.lcRepository, .T. )
+		llSuccess = .F.
+		EXIT
+	ENDIF
+
+	*-- If the project was open, re-open it.
+	IF m.llProjectOpen
+		MODIFY PROJECT ( FORCEEXT( m.lcFullFileName, "PJX" ) ) NOWAIT
+	ENDIF
+ENDFOR
+
+WAIT CLEAR
+
+RETURN m.llSuccess
+ENDFUNC
+
+*********************************************************************
+FUNCTION RegenerateRepoMenus
+
+*!*	This method regenerates the menu code files (.MPR/.MPX) for any menu binary files (.MNX) committed
+*!*	to the specified Git repository.  The code files and object code for menus typically aren't
+*!*	committed to a repository, so this ensures they are in synch with different versions of the menus
+*!*	which have been checked out.
+
+*!*	PARAMETERS:
+*!*			  toErrorInfo (O) -	A variable passed by reference to store any error info returned from
+*!*								this method.  This will be returned as an Exception object.  This
+*!*								parameter is not required, but recommended.
+*!*			 tcRepository (O) -	The full path to the repository folder where menu files are to be
+*!*								regenerated.  If omitted, the current folder will be used as the
+*!*								repository.
+*!*		  tcFileListAlias (O) -	The alias of the cursor containing a list of all the files in the
+*!*								specified repository.  If omitted or there is no cursor open with
+*!*								the specified name, the file list will be retrieved here, and the
+*!*								cursor name stored in this parameter.  The calling code can delegate
+*!*								the task of retrieving the list to this method by passing a variable
+*!*								to this parameter by reference, then it will have access to the
+*!*								cursor afterward.
+
+*!*	RETURNS: Logical
+*!*		.T. if all menu code files are successfully regenerated, or if there are no menu files to
+*!*		regenerate, .F. if an error occurs.
+*********************************************************************
+LPARAMETERS toErrorInfo AS Exception, tcRepository AS String, tcFileListAlias AS String
+
+LOCAL laFileList[1], ;
+	lcFullFileName, ;
+	lcMessage, ;
+	lcRepository, ;
+	llSuccess, ;
+	xx
+
+*-- Make sure we have a repository name.
+lcRepository = This.GetRepositoryPath( m.tcRepository )
+
+IF VARTYPE( m.tcFileListAlias ) = "C" ;
+		AND NOT EMPTY( m.tcFileListAlias ) ;
+		AND USED( m.tcFileListAlias )
+	*-- The specified cursor is already open, so use it.
+	llSuccess = .T.
+ELSE
+	*-- Attempt to retrieve the list of files committed to the specified
+	*-- repository.
+	llSuccess = This.FetchRepoFileList( @m.toErrorInfo, m.lcRepository, @m.tcFileListAlias )
+ENDIF
+
+*-- If something failed, or there are no files in this repository,
+*-- there's nothing to do here.
+IF NOT m.llSuccess ;
+		OR RECCOUNT( m.tcFileListAlias ) = 0
+	RETURN m.llSuccess
+ENDIF
+
+*-- Retrieve a list of the menu files in this repository folder.
+SELECT GL_FileName ;
+	FROM ( m.tcFileListAlias ) ;
+	WHERE UPPER( RTRIM( GL_FileExtension ) ) == "MNX" ;
+	INTO ARRAY laFileList
+
+*-- There are no menu files that are committed to the repository, so
+*-- nothing to do here.
+IF _TALLY = 0
+	RETURN m.llSuccess
+ENDIF
+
+lcMessage = "Regenerating menu code files for repository:" + CHR(13) ;
+		+ m.lcRepository + CHR(13) ;
+		+ "Regenerating menu: "
+
+*-- Regenerate all the menu code.
+FOR xx = 1 TO ALEN( laFileList, 1 )
+	WAIT WINDOW m.lcMessage + laFileList[m.xx] NOWAIT NOCLEAR
+
+	*-- Get the full path of the current file.  Note that FULLPATH()
+	*-- normalizes any forward slashes (/) in the path to backslashes
+	*-- (\).
+	lcFullFileName = FULLPATH( ADDBS( m.lcRepository ) + laFileList[m.xx] )
+
+	*-- Attempt to generate the code files for this menu file.
+	IF NOT This.GenerateMenuCode( @m.toErrorInfo, m.lcFullFileName )
+		llSuccess = .F.
+		EXIT
+	ENDIF
+ENDFOR
+
+WAIT CLEAR
+
+RETURN m.llSuccess
+ENDFUNC
+
+*********************************************************************
+FUNCTION RecompileRepoProgramFiles
+
+*!*	This method recompiles all the program files committed to the specified Git repository.  The
+*!*	object code files (.FXP) are typically not committed to the repository, so this ensures that
+*!*	they are in synch with the program files if different versions of the program files have been
+*!*	checked out.
+
+*!*	PARAMETERS:
+*!*			  toErrorInfo (O) -	A variable passed by reference to store any error info returned from
+*!*								this method.  This will be returned as an Exception object.  This
+*!*								parameter is not required, but recommended.
+*!*			 tcRepository (O) -	The full path to the repository folder where program files are to be
+*!*								recompiled.  If omitted, the current folder will be used as the
+*!*								repository.
+*!*		  tcFileListAlias (O) -	The alias of the cursor containing a list of all the files in the
+*!*								specified repository.  If omitted or there is no cursor open with
+*!*								the specified name, the file list will be retrieved here, and the
+*!*								cursor name stored in this parameter.  The calling code can delegate
+*!*								the task of retrieving the list to this method by passing a variable
+*!*								to this parameter by reference, then it will have access to the
+*!*								cursor afterward.
+
+*!*	RETURNS: Logical
+*!*		.T. if all program files are successfully recompiled, or if there are no program files to
+*!*		recompile, .F. if an error occurs.
+*********************************************************************
+LPARAMETERS toErrorInfo AS Exception, tcRepository AS String, tcFileListAlias AS String
+
+LOCAL laFileList[1], ;
+	lcFullFileName, ;
+	lcMessage, ;
+	lcRepository, ;
+	lcSetNotify, ;
+	llSuccess, ;
+	xx
+
+*-- Make sure we have a repository name.
+lcRepository = This.GetRepositoryPath( m.tcRepository )
+
+IF VARTYPE( m.tcFileListAlias ) = "C" ;
+		AND NOT EMPTY( m.tcFileListAlias ) ;
+		AND USED( m.tcFileListAlias )
+	*-- The specified cursor is already open, so use it.
+	llSuccess = .T.
+ELSE
+	*-- Attempt to retrieve the list of files committed to the specified
+	*-- repository.
+	llSuccess = This.FetchRepoFileList( @m.toErrorInfo, m.lcRepository, @m.tcFileListAlias )
+ENDIF
+
+*-- If something failed, or there are no files in this repository,
+*-- there's nothing to do here.
+IF NOT m.llSuccess ;
+		OR RECCOUNT( m.tcFileListAlias ) = 0
+	RETURN m.llSuccess
+ENDIF
+
+*-- Retrieve a list of the program files in this repository folder.
+SELECT GL_FileName ;
+	FROM ( m.tcFileListAlias ) ;
+	WHERE UPPER( RTRIM( GL_FileExtension ) ) == "PRG" ;
+	INTO ARRAY laFileList
+
+*-- There are no program files that are committed to the repository, so
+*-- nothing to do here.
+IF _TALLY = 0
+	RETURN m.llSuccess
+ENDIF
+
+*-- Make sure SET NOTIFY is OFF during compiling.  We won't get any
+*-- progress info when compiling very large files, but the compile is
+*-- *significantly* faster.
+lcSetNotify = SET("Notify")
+SET NOTIFY OFF
+
+lcMessage = "Recompiling " + ALLTRIM( TRANSFORM( ALEN( laFileList, 1 ), "999,999" ) ) ;
+		+ " program files for repository:" + CHR(13) + m.lcRepository + CHR(13) ;
+		+ "Please wait..."
+WAIT WINDOW m.lcMessage NOWAIT NOCLEAR
+
+TRY
+	*-- Recomile all the program code.
+	FOR xx = 1 TO ALEN( laFileList, 1 )
+		*!* WAIT WINDOW m.lcMessage + laFileList[m.xx] NOWAIT NOCLEAR
+
+		*-- Get the full path of the current file.  Note that FULLPATH()
+		*-- normalizes any forward slashes (/) in the path to backslashes
+		*-- (\).
+		lcFullFileName = FULLPATH( ADDBS( m.lcRepository ) + laFileList[m.xx] )
+
+		*-- Attempt to recompile this program.
+		COMPILE ( m.lcFullFileName )
+	ENDFOR
+
+CATCH TO toErrorInfo
+	llSuccess = .F.
+ENDTRY
+
+*-- Make sure the original setting is restored.
+SET NOTIFY &lcSetNotify.
+
+WAIT CLEAR
+
+RETURN m.llSuccess
+ENDFUNC
+
+*********************************************************************
 PROTECTED FUNCTION IsAPIDeclared
 
 *!*	Determine if the specified API function has already been DECLAREd.
@@ -2315,6 +2830,136 @@ RETURN m.lcProjectName
 ENDPROC
 
 *********************************************************************
+PROTECTED FUNCTION GenerateMenuCode
+
+*!*	This function provides a simple way to generate the .MPR/.MPX files for a menu by specifying
+*!*	the name of the .MNX file to process.  For whatever reason, the VFP _GenMenu function must take
+*!*	the name of .PJX file, and the record number of a menu file in that project, which makes it
+*!*	complicated to use that function by itself.
+
+*!*	PARAMETERS:
+*!*		  toErrorInfo (O) -	A variable passed by reference to store any error info returned from
+*!*							this method.  This will be returned as an Exception object.  This
+*!*							parameter is not required, but recommended.
+*!*		   tcMenuFile (R) -	The full path and file name of the menu file (.MNX) for which the code
+*!*							file (.MPR) is to be generated.  The extension is optional, and will be
+*!*							forced to .MNX if omitted.
+
+*!*	RETURNS: Logical
+*!*		.T. if the menu code file can be successfully generated, .F. otherwise.
+*********************************************************************
+LPARAMETERS toErrorInfo AS Exception, tcMenuFile AS String
+
+LOCAL lcMenuFile, ;
+	lcTempProjectName, ;
+	loProject AS VisualFoxPro.IFoxProject, ;
+	lcProjectAlias, ;
+	lnWorkArea, ;
+	lnMenuRecNo, ;
+	llSuccess
+
+lcTempProjectName = ADDBS( SYS(2023) ) + "GenerateMenu" + SYS(2015)
+lcProjectAlias = "C_GenerateMenuProject" + SYS(2015)
+lnWorkArea = SELECT()
+
+TRY
+	*-- Make sure a menu file name was specified.
+	IF NOT VARTYPE( m.tcMenuFile ) = "C" ;
+			OR EMPTY( m.tcMenuFile )
+		ERROR 11
+	ENDIF
+
+	*-- Make sure the menu file has the correct extension.
+	lcMenuFile = FORCEEXT( m.tcMenuFile, "mnx" )
+
+	DO CASE
+		CASE NOT FILE( m.lcMenuFile )
+			*-- The specified menu file can't be found, so abort.
+			ERROR 1, m.lcMenuFile
+
+		CASE EMPTY( _GenMenu )
+			*-- We use the menu-generation program specified in the
+			*-- VFP development environment, but that hasn't been set.
+			ERROR "The menu-generation program has not been specified."
+
+		CASE NOT FILE( _GenMenu )
+			*-- An invalid menu generation program has been specified
+			*-- in the development environment.
+			ERROR 1693
+
+		OTHERWISE
+			*-- Everything appears to be valid.
+	ENDCASE
+
+	*-- Since the menu generation program requires a project file,
+	*-- create a temporary one for this process.
+	CREATE PROJECT ( m.lcTempProjectName ) NOWAIT NOSHOW NOPROJECTHOOK
+	loProject = _VFP.Projects( m.lcTempProjectName + ".PJX" )
+
+	*-- Add the menu file to the project.
+	loProject.Files.Add( m.lcMenuFile )
+
+	*-- We need to lookup the project table record for the menu file
+	*-- and hack it for this process to succeed.
+	USE ( m.lcTempProjectName + ".PJX" ) IN 0 AGAIN ALIAS ( m.lcProjectAlias ) SHARED
+
+	*-- Locate the record referencing the menu file.
+	SELECT ( m.lcProjectAlias )
+	LOCATE FOR Type = "M"
+	IF FOUND( m.lcProjectAlias )
+		*-- We need the record number of the project table record that
+		*-- references the menu file so that we can pass it to the menu
+		*-- generation program used by VFP.
+		lnMenuRecNo = RECNO( m.lcProjectAlias )
+
+		*-- The relative path and file name of the .MPR output file
+		*-- must be specified in the project file, otherwise the menu
+		*-- generation program will fail.  Make sure the output file
+		*-- is in the same folder and has the same file stem as the
+		*-- menu file.  The file name must also be NULL terminated,
+		*-- otherwise the VFP menu generation program will fail.
+		REPLACE OutFile WITH FORCEEXT( Name, "mpr" ) + CHR(0) ;
+				IN ( m.lcProjectAlias )
+	ELSE
+		*-- We just added the menu file, so there's no good reason for
+		*-- this, but abort.
+		ERROR "The menu file '" + m.lcMenuFile + "' could not be processed."
+	ENDIF
+
+	*-- We're done with the cursor, so attempt to close it.
+	USE IN SELECT( m.lcProjectAlias )
+
+	*-- We finally have everything we need to call the VFP menu generation
+	*-- program.
+	DO ( _GenMenu ) WITH m.lcTempProjectName + ".PJX", m.lnMenuRecNo
+
+	llSuccess = .T.
+
+CATCH TO toErrorInfo
+	llSuccess = .F.
+
+FINALLY
+	*-- Make sure the project table cursor is closed, in case something
+	*-- failed while it was still open.
+	USE IN SELECT( m.lcProjectAlias )
+
+	*-- Make sure the temporary project is closed.
+	IF VARTYPE( m.loProject ) = "O"
+		loProject.Close()
+	ENDIF
+
+	*-- Attempt to erase the temporary project.
+	ERASE ( m.lcTempProjectName + ".*" )
+
+	*-- Restore whatever work area was selected when this function was
+	*-- called.
+	SELECT ( m.lnWorkArea )
+ENDTRY
+
+RETURN m.llSuccess
+ENDFUNC
+
+*********************************************************************
 PROTECTED FUNCTION GetBin2PrgAppPath
 
 *!*	Retrieves the full path to the Binary to Text conversion app.
@@ -2427,39 +3072,51 @@ RETURN m.loConverter
 ENDFUNC
 
 *********************************************************************
-PROTECTED FUNCTION ConvertBinaryFileToText
+PROTECTED FUNCTION ConvertVFPFile
 
-*!*	This method attempts to generate the FoxBin2Prg text file for the specified VFP binary file.
+*!*	This method attempts to generate the FoxBin2Prg text file for the specified VFP binary file, or
+*!*	generate the VFP binary file for the specified FoxBin2Prg text file.
 
 *!*	PARAMETERS:
 *!*			  toErrorInfo (O) -	A variable passed by reference to store any error info returned from
 *!*								this method.  This will be returned as an Exception object.  This
 *!*								parameter is not required, but recommended.
-*!*		 tcBinaryFilename (R) -	The name of a VFP binary file for which a text file is to be generated.
-*!*								The file name must include an extension, and the extension must be
-*!*								the MAIN extension for that binary file type.  For example, for a
-*!*								VFP table, the extension must be .DBF, NOT .CDX or .FPT.  Full path
-*!*								information is expected to be included in the file name.
+*!*		  tcInputFilename (R) -	The name of a VFP binary file for which a text file is to be generated,
+*!*								or the name of the text file to be converted to a VFP binary file.
+*!*								The file name must include an extension, and for binary file types
+*!*								the extension must be the MAIN extension for that file type.  For
+*!*								example, for a VFP table, the extension must be .DBF, NOT .CDX or
+*!*								.FPT.  Full path information is expected to be included in the file
+*!*								name.
 *!*			 tcRepository (O) -	The path of a repository.  This parameter is not used directly in
 *!*			 					this method, but passed on to methods called from here.
+*!*		 tlGenerateBinary (O) -	If passed as .T., indicates that tcInputFilename is the name of a
+*!*								text file that is to be converted to a binary file.  If omitted,
+*!*								the input file is assumed to be a binary file that will be converted
+*!*								to a text file.
 
 *!*	RETURNS: Logical
 *!*		.T. if the file can be successfully converted, or if there's nothing to do, .F. if this
 *!*		process fails.
 *********************************************************************
-LPARAMETERS toErrorInfo AS Exception, tcBinaryFilename AS String, tcRepository AS String
+LPARAMETERS toErrorInfo AS Exception, tcInputFilename AS String, tcRepository AS String, ;
+			tlGenerateBinary AS Boolean
 
 LOCAL loConverter AS C_FoxBin2Prg OF "C:\Work\VFP\Shared\Tools\Thor\Tools\Components\FoxBin2Prg\FoxBin2Prg.PRG", ;
 	lcAltTextFilename, ;
+	llGenerateText, ;
 	llSuccess
 
+llGenerateText = ( NOT VARTYPE( m.tlGenerateBinary ) = "L" OR NOT m.tlGenerateBinary )
 llSuccess = .T.
 
-*-- Check if the specified VFP binary file uses an alternate text file.
-*-- If so, assume it is not generated by FoxBin2Prg, and exit.
-lcAltTextFilename = This.GetAlternateTextName( m.tcBinaryFilename, m.tcRepository )
-IF VARTYPE( m.lcAltTextFilename ) = "C"
-	RETURN m.llSuccess
+IF m.llGenerateText
+	*-- Check if the specified VFP binary file uses an alternate text
+	*-- file.  If so, assume it is not generated by FoxBin2Prg, and exit.
+	lcAltTextFilename = This.GetAlternateTextName( m.tcInputFilename, m.tcRepository )
+	IF VARTYPE( m.lcAltTextFilename ) = "C"
+		RETURN m.llSuccess
+	ENDIF
 ENDIF
 
 *-- Attempt to get a reference to the converter.  If we can't get it,
@@ -2471,19 +3128,26 @@ ENDIF
 
 *-- Make sure the FoxBin2Prg config settings are loaded for the folder
 *-- containing the file being processed.
-This.SetBin2PrgConfiguration( JUSTPATH( m.tcBinaryFilename ) )
+This.SetBin2PrgConfiguration( JUSTPATH( m.tcInputFilename ) )
 
-*-- If text generation is not allowed for the specified file, there's
-*-- nothing to do here.
-IF NOT m.loConverter.hasSupport_Bin2Prg( m.tcBinaryFilename )
-	RETURN m.llSuccess
+*-- Check if file conversion is supported for the specified file, otherwise
+*-- there's nothing to do here.
+IF m.llGenerateText
+	IF NOT m.loConverter.hasSupport_Bin2Prg( m.tcInputFilename )
+		RETURN m.llSuccess
+	ENDIF
+ELSE
+	IF NOT m.loConverter.hasSupport_Prg2Bin( m.tcInputFilename )
+		RETURN m.llSuccess
+	ENDIF
 ENDIF
 
-*-- Attempt to generate the text file.  Only one file is being processed,
-*-- so don't take the time to show progress info.  Don't show errors
-*-- either, since we'll just retrieve the error info in the exception
-*-- object which we return to the calling code for processing.
-IF m.loConverter.Execute( m.tcBinaryFilename, "", "", .T., "1", "0", "1", .NULL., @m.toErrorInfo ) > 0
+*-- Attempt to convert the file.  Only one file is being processed, so
+*-- don't take the time to show progress info.  Don't show errors either,
+*-- since we'll just retrieve the error info in the exception object
+*-- which we return to the calling code for processing.
+IF m.loConverter.Execute( m.tcInputFilename, "", "", m.llGenerateText, "1", "0", "1", .NULL., ;
+		@m.toErrorInfo ) > 0
 	llSuccess = .F.
 ENDIF
 
@@ -2530,6 +3194,51 @@ loConverter.evaluateConfiguration( "", "", "", "", "", "", "", "", This.icBin2Pr
 ENDPROC
 
 *********************************************************************
+PROTECTED FUNCTION GetTextExtension
+
+*!*	This method determines the extension that will be used when a generating a text file for a file
+*!*	with the specified binary extension.
+
+*!*	PARAMETERS:
+*!*		tcBinaryExtension (R) -	The VFP binary extension for which a text extension is needed.
+*!*								This must be one of the values returned by This.GetMainBinaryExtension().
+*!*			   tcFilePath (O) -	The path where the binary file is located.  If omitted, get the text
+*!*								extension that applies to files in the root folder of the current
+*!*								repository.
+
+*!*	RETURNS: Character
+*!*		If a text file extension applies for the specified binary extension, it will be returned,
+*!*		otherwise the extension passed to this method will be returned as-is.
+*********************************************************************
+LPARAMETERS tcBinaryExtension AS String, tcFilePath AS String
+
+LOCAL lcFilePath, ;
+	loConverter AS C_FoxBin2Prg OF "C:\Work\VFP\Shared\Tools\Thor\Tools\Components\FoxBin2Prg\FoxBin2Prg.PRG", ;
+	lcTextExtension
+
+*-- Text extensions can vary by folder.  We don't recommend doing that,
+*-- but we'll take that into account.  If the calling code didn't specify
+*-- the folder being used, use the repository folder.
+IF VARTYPE( m.tcFilePath ) = "C" ;
+		AND NOT EMPTY( m.tcFilePath )
+	lcFilePath = m.tcFilePath
+ELSE
+	lcFilePath = This.GetRepositoryPath()
+ENDIF
+
+*-- Make sure the FoxBin2Prg configuration settings are loaded for the
+*-- specified folder.
+This.SetBin2PrgConfiguration( m.lcFilePath )
+
+*-- Use the Bin-to-Prg object to get the default extension used for
+*-- the text file.
+loConverter = This.GetBin2PrgConverter()
+lcTextExtension = UPPER( m.loConverter.get_Ext2FromExt( m.tcBinaryExtension ) )
+
+RETURN m.lcTextExtension
+ENDFUNC
+
+*********************************************************************
 PROTECTED FUNCTION GetTextFilename
 
 *!*	This method determines the name of the text file that will be generated for a specified VFP
@@ -2563,21 +3272,16 @@ lcTextFilename = This.GetAlternateTextName( m.tcBinaryFilename, m.tcRepository )
 
 IF ISNULL( m.lcTextFilename )
 	*-- There is no alternate text file mapping.  Get the full path to
-	*-- the binary file, and make sure the FoxBin2Prg configuration
-	*-- settings are loaded for that folder.
+	*-- the binary file, and lookup the extension for the specified
+	*-- file.
 	lcFilePath = This.GetRepositoryPath( m.tcRepository )
 	lcFilePath = JUSTPATH( ADDBS( m.lcFilePath ) + m.tcBinaryFilename )
-	This.SetBin2PrgConfiguration( m.lcFilePath )
+	lcTextExtension = This.GetTextExtension( JUSTEXT( m.tcBinaryFilename ), m.lcFilePath )
 
-	*-- Use the Bin-to-Prg object to get the default extension used for
-	*-- the text file.
-	loConverter = This.GetBin2PrgConverter()
-	lcTextExtension = m.loConverter.get_Ext2FromExt( JUSTEXT( m.tcBinaryFilename ) )
-
-	*-- If the binary extension isn't recognized by FoxBin2Prg, the
-	*-- original extension is returned.  If that's the case, a text
-	*-- file will not be generated, so return an empty string, otherwise
-	*-- return the file name with text extension.
+	*-- If the binary extension isn't recognized, the original extension
+	*-- is returned.  If that's the case, a text file will not be generated,
+	*-- so return an empty string, otherwise return the file name with
+	*-- text extension.
 	lcTextFilename = IIF( UPPER( m.lcTextExtension ) == UPPER( JUSTEXT( m.tcBinaryFilename ) ), ;
 			SPACE(0), FORCEEXT( m.tcBinaryFilename, m.lcTextExtension ) )
 ENDIF
@@ -2712,50 +3416,6 @@ FOR xx = 1 TO m.lnLineCount
 ENDFOR
 
 ENDPROC
-
-*!* MJP -- Removed 04/21/2015 11:47:59
-*-- FoxBin2Prg is now being used to retrieve the text extension, so
-*-- that its config settings are respected.
-*!* *********************************************************************
-*!* PROTECTED FUNCTION GetTextExtension
-
-*!* *!*	This method determines what extension is being used for the text files being generated for
-*!* *!*	the VFP binary files.  This method assumes the FoxBin2Prg defaults.
-
-*!* *!*	PARAMETERS:
-*!* *!*		tcBinaryExtension (R) -	The extension of a VFP binary file.
-
-*!* *!*	RETURNS: Character
-*!* *!*		Returns the extension used for a text file generated for a file with the specified binary
-*!* *!*		extension.  If the passed extension is not a valid extension for a VFP binary file, a
-*!* *!*		blank string is returned.
-*!* *********************************************************************
-*!* LPARAMETERS tcBinaryExtension AS String
-
-*!* LOCAL lcBinaryExtension, ;
-*!* 	lcTextExtension
-
-*!* *-- Format the extension for comparison.
-*!* lcBinaryExtension = UPPER( ALLTRIM( m.tcBinaryExtension ) )
-
-*!* DO CASE
-*!* 	CASE ( "|" + m.lcBinaryExtension + "|" ) $ "|PJX|VCX|SCX|FRX|LBX|MNX|DBF|"
-*!* 		*-- These extensions all simply replace the last character
-*!* 		*-- with a "2" to get the text extension.
-*!* 		lcTextExtension = LEFT( m.lcBinaryExtension, 2 ) + "2"
-
-*!* 	CASE m.lcBinaryExtension == "DBC"
-*!* 		*-- Since .DBF and .DBC have the same first 2 characters, FoxBin2Prg
-*!* 		*-- uses DC2 as the text extension for .DBC files.
-*!* 		lcTextExtension = "DC2"
-
-*!* 	OTHERWISE
-*!* 		*-- This is not a valid VFP binary file extension.
-*!* 		lcTextExtension = SPACE(0)
-*!* ENDCASE
-
-*!* RETURN m.lcTextExtension
-*!* ENDFUNC
 
 *********************************************************************
 PROTECTED PROCEDURE FetchVFPExtensionMapAlias
@@ -2899,7 +3559,8 @@ PROTECTED FUNCTION ExecCommandVFPBinary
 LPARAMETERS toErrorInfo AS Exception, tcCommand AS String, tcFileName AS String
 
 LOCAL llSuccess, ;
-	lcMainExtension
+	lcMainExtension, ;
+	lcExtensionExpr
 
 llSuccess = .T.
 
@@ -2915,8 +3576,22 @@ DO CASE
 		*-- These file types all have a single companion file whose
 		*-- extension begins with the same first 2 letters, and ends
 		*-- in "T", so we handle all of them using the same formula.
+		*!* *{ MJP -- 06/04/2015 08:38:38 - Begin
+		*!* llSuccess = This.ExecuteCommand( @m.toErrorInfo, .NULL., m.tcCommand + ' -- "' ;
+		*!* 		+ LEFT( m.tcFileName, LENC( m.tcFileName ) - 1 ) + '[TtXx]"' )
+		*-- In general, the main file and its memo file use the same
+		*-- case for their extensions, however, I ran into a couple
+		*-- cases where the extension of one file was uppercase and
+		*-- the other was lowercase, so we need to account for that in
+		*-- the expression for the entire extension.
+		lcExtensionExpr = "[" + UPPER( SUBSTR( m.lcMainExtension, 1, 1 ) ) ;
+				+ LOWER( SUBSTR( m.lcMainExtension, 1, 1 ) ) + "]" ;
+				+ "[" + UPPER( SUBSTR( m.lcMainExtension, 2, 1 ) ) ;
+				+ LOWER( SUBSTR( m.lcMainExtension, 2, 1 ) ) + "][TtXx]"
+
 		llSuccess = This.ExecuteCommand( @m.toErrorInfo, .NULL., m.tcCommand + ' -- "' ;
-				+ LEFT( m.tcFileName, LENC( m.tcFileName ) - 1 ) + '[TtXx]"' )
+				+ LEFT( m.tcFileName, LENC( m.tcFileName ) - 3 ) + m.lcExtensionExpr + '"' )
+		*!* *} MJP -- 06/04/2015 08:38:38 - End
 
 	CASE m.lcMainExtension = "DBC"
 		*-- The .DBC is a set of 3 files with a little different naming
@@ -2963,6 +3638,25 @@ IF EMPTY( m.lcRepository )
 	RETURN
 ENDIF
 
+lcAlias = SPACE(0)
+llSuccess = This.FetchRepoFileList( @m.loErrorInfo, m.lcRepository, @m.lcAlias )
+
+IF m.llSuccess
+	WAIT WINDOW "Files in repository '" + m.lcRepository + "'" NOWAIT NOCLEAR
+	SELECT ( m.lcAlias )
+	BROWSE LAST NOCAPTIONS
+	WAIT CLEAR
+ELSE
+	lcResult = IIF( m.loErrorInfo.ErrorNo = 0, SPACE(0), ;
+				"Error " + TRANSFORM( m.loErrorInfo.ErrorNo ) + CHR(13) ) ;
+			+ m.loErrorInfo.Message ;
+			+ IIF( EMPTY( m.loErrorInfo.LineContents ), SPACE(0), ;
+				+ CHR(13) + CHR(13) + "Command:  " + m.loErrorInfo.LineContents )
+
+	MESSAGEBOX( "Repository: " + m.lcRepository + CHR(13) + CHR(13) + m.lcResult, 16, PROGRAM() )
+ENDIF
+
+lcAlias = SPACE(0)
 llSuccess = This.FetchRepoStatus( @m.loErrorInfo, m.lcRepository, @m.lcAlias )
 
 DO CASE

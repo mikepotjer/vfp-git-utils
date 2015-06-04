@@ -78,6 +78,27 @@ files are being committed to the Git repositories (with the exception of the .PJ
 only binary or only text files are being committed, then this tool will not be very helpful,
 and may even undo some legitimate changes, and therefore should not be used.
 
+#### `Thor_Tool_GitUtilities_PostCheckoutSynch.PRG`
+This tool appears under the Git Utilities menu as **Post-checkout file synchronization**.  It
+operates on either an entire VFP project (all the repositories in that project), or an individual
+Git repository folder.  It performs several operations to synchronize binary files and object code
+to files that have been checked out from a branch of a Git repository.  
+
+ - If the selected repositories contain FoxBin2Prg text files for .PJX files, the .PJX files will
+   be regenerated.  
+   **Note:** This assumes you don't commit .PJX/.PJT files to your repositories.
+ - For any binary menu files (.MNX) in the repositories, the code files (.MPR) will be regenerated
+   and recompiled using whatever program is specified in the VFP `_GENMENU` system variable.  
+   **Note:** This assumes you don't commit .MPR/.MPX files to your repositories.
+ - All program files in the repositories will be recompiled.   
+   **Note:** This assumes you don't commit .FXP files to your repositories.  
+
+Since this tool finds and regenerates .PJX files for all the project text files in the selected
+repositories, it is normally simpler and faster than running FoxBin2Prg directly.  In addition,
+regenerating and recompiling just the menus and programs is faster than recompiling an entire
+project to accomplish the same end result, and will save time when running the **Prepare for Git
+commit** tool, since it won't change the object code in the other VFP binary files.  
+
 #### `Thor_Tool_GitUtilities_SaveProjectTimeStamps.PRG`
 This tool appears under the Git Utilities menu as **Save file timestamps**.  It operates on either
 an entire VFP project, or an individual Git repository folder.  The purpose of this tool is to
