@@ -44,6 +44,10 @@ This tool requires Git for Windows, FoxBin2Prg, and some Thor Repository tools.
 		.Link          = 'https://github.com/mikepotjer/vfp-git-utils'	&& 'http://www.optimalinternet.com/' && link to a page for this tool
 		.VideoLink     = '' && link to a video for this tool
 
+		*-- This tool restores timestamps, if applicable, so include
+		*-- the timestamp options with this tool.
+		.OptionTool    = ccToolName
+		.OptionClasses = "clsPreserveTimestamp, clsTimestampFileName"
 	ENDWITH
 
 	RETURN m.lxParam1
@@ -182,3 +186,21 @@ ENDIF
 *-- from some other code.
 RETURN EXECSCRIPT( _Screen.cThorDispatcher, "Result=", m.llSuccess )
 ENDPROC
+
+
+*********************************************************************
+*-- Option classes
+*********************************************************************
+DEFINE CLASS clsPreserveTimestamp AS Custom
+	Tool = ccToolName
+	Key = ccKeyPreserveTimestamps
+	Value = ccInitialValuePreserveTS
+	EditClassName = [ccEditClassName of Thor_Proc_GitUtilities.PRG]
+ENDDEFINE
+
+DEFINE CLASS clsTimestampFileName AS Custom
+	Tool = ccToolName
+	Key = ccKeyTimestampFileName
+	Value = ccInitialValueTSFileName
+	EditClassName = [ccEditClassName of Thor_Proc_GitUtilities.PRG]
+ENDDEFINE

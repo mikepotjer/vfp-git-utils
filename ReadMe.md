@@ -91,7 +91,10 @@ to files that have been checked out from a branch of a Git repository.
    and recompiled using whatever program is specified in the VFP `_GENMENU` system variable.  
    **Note:** This assumes you don't commit .MPR/.MPX files to your repositories.
  - All program files in the repositories will be recompiled.   
-   **Note:** This assumes you don't commit .FXP files to your repositories.  
+   **Note:** This assumes you don't commit .FXP files to your repositories.
+ - In the Git Utilities options, if you have specified that timestamp files are be generated,
+   then for each repository being processed that has a timestamp file, the file modification dates
+   will be restored for all files in the repository.  
 
 Since this tool finds and regenerates .PJX files for all the project text files in the selected
 repositories, it is normally simpler and faster than running FoxBin2Prg directly.  In addition,

@@ -2219,6 +2219,14 @@ IF m.llSuccess
 	llSuccess = This.RecompileRepoProgramFiles( @m.toErrorInfo, m.tcRepository, @m.lcFileListAlias )
 ENDIF
 
+*{ MJP -- 06/10/2015 01:40:07 PM - Begin
+*-- Restore file timestamps for all repository files, if applicable.
+IF m.llSuccess ;
+		AND This.AreTimestampsPreserved( m.tcRepository )
+	llSuccess = This.RestoreRepoTimestamps( @m.toErrorInfo, m.tcRepository )
+ENDIF
+*} MJP -- 06/10/2015 01:40:07 PM - End
+
 USE IN SELECT( m.lcFileListAlias )
 
 RETURN m.llSuccess
