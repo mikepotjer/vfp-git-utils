@@ -1,0 +1,42 @@
+Lparameters toUpdateInfo
+
+Local lcNote
+With toUpdateInfo
+    .VersionNumber  = 'v2015.07.08'
+    .VersionDate    = Date(2015, 7, 8)
+    .SourceFileUrl  = 'https://bitbucket.org/mikepotjer/vfp-git-utils/downloads/GitUtils.zip'
+    .LinkPrompt     = 'Git Utilities for VFP Home Page'
+    .Link           = 'https://bitbucket.org/mikepotjer/vfp-git-utils'
+EndWith
+
+Text to lcNote NoShow
+The Git Utilities ease the process of working with VFP's binary files when using Git as the source control provider, as well as making it easier to work with .PJX projects which contain files from multiple Git repositories.  See the tool home page for more information.
+
+These utilities require the Thor repository, FoxBin2Prg, Git for Windows, and the Windows Scripting Host.
+
+==== Change History ====
+2015.07.08
+ - Made some minor changes for including this project in Thor's "Check for Updates" feature.
+
+2015.06.10
+ - Enhance the post-checkout synch process to restore file timestamps, if applicable.
+ - Modify the post-checkout synch tool to link to the Git Utilities options to more easily access the timestamp options.
+
+2015.06.04
+ - Fix a bug in the "Prepare for Git commit" process which would fail to cleanup a binary file if the file extensions for a pair of binary files were not the same case (for example .vcx and .VCT).  Only the primary file was being cleaned up in this scenario.
+ - Add new features to the Git Utilities class to provide post-checkout file synchronization.
+ - Add a new "Post-checkout file synchronization" tool which implements the corresponding features added to the Git utilities class.
+ - Update the readme with information about the post-checkout tool.
+
+2015.06.03
+ - Update to the ReadMe file to add a section on getting started with Git.
+ - Add links to the tool home page on GitHub.
+
+2015.05.12
+ - Initial public release of the Git Utilities.
+EndText
+
+AddProperty(toUpdateInfo, 'Notes', lcNote)
+
+Execscript(_Screen.cThorDispatcher, 'Result=', toUpdateInfo)
+Return toUpdateInfo

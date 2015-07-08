@@ -1,6 +1,6 @@
 LPARAMETERS lxParam1
 
-#INCLUDE Thor_Proc_GitUtilities.h
+#INCLUDE Procs\Thor_Proc_GitUtilities.h
 #DEFINE TOOL_PROMPT		"Prepare for Git commit"
 
 ****************************************************************
