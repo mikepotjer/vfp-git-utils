@@ -33,9 +33,10 @@ for getting started with Git.  This guide includes:
 
 ### Installation
 
-Installation is simple.  Just copy the include file (.h) and the .PRG files into the `My Tools` folder
-of Thor.  This can be easily accessed from the Thor menu by selecting `Thor > More > Open Folder >
-My Tools`.  
+The Git Utilities are being included in Thor's **Check for Updates**.  If you don't see _Git Utilities_
+in the list, you can manually add it by copying the file `Thor_Update_Git-Utils.PRG` to your
+`My Updates` folder.  This folder can be easily accessed from the Thor menu by selecting
+`Thor > More > Open Folder > Tools`.  From there you can navigate to `Updates\My Updates`.  
 
 When installed, these tools will appear in the Thor tools menus under `Applications > Git Utilities`.
 
