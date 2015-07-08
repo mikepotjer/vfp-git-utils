@@ -38,6 +38,10 @@ in the list, you can manually add it by copying the file `Thor_Update_Git-Utils.
 `My Updates` folder.  This folder can be easily accessed from the Thor menu by selecting
 `Thor > More > Open Folder > Tools`.  From there you can navigate to `Updates\My Updates`.  
 
+**NOTE:** If you previously installed Git Utilities in the `My Tools` folder, you need to delete all
+`Thor_Proc_GitUtilities.*` and `Thor_Tool_GitUtilities_*.*` files from that folder.  If you don't,
+the files in `My Tools` will be used instead of the files coming from _Check for Updates_.  
+
 When installed, these tools will appear in the Thor tools menus under `Applications > Git Utilities`.
 
 ### Tool Options
