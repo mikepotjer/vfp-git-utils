@@ -2838,6 +2838,142 @@ RETURN m.lcProjectName
 ENDPROC
 
 *********************************************************************
+FUNCTION GetProcessScope
+
+*!*	This method validates the scope for Git processing, and/or prompts the user for the scope.
+*!*	A Thor selection form is used, which remembers the user's selections.
+
+*!*	PARAMETERS:
+*!*			  tcScope (O) -	A default scope to use, either a folder path, or a path and .PJX file
+*!*							name.  If omitted or invalid, a form will be displayed where the user
+*!*							can select the scope.
+*!*		tcFormCaption (O) -	The caption to use on the scope selection form (if it needs to be
+*!*							displayed.  If omitted or invalid, the default Git Utilities caption
+*!*							will be used.
+
+*!*	RETURNS: Object
+*!*		Returns an object containing information about the selected scope.  The structure of the
+*!*		object is as follows:
+*!*			cScope			  -	Contains the selected scope, either a folder path, or a path and .PJX
+*!*								file name, or empty if the user cancelled or an error occurred.
+*!*			lScopeIsProject	  -	Indicates whether the scope is a project file or a folder.  This will
+*!*								be NULL if the user cancelled or an error occurred.
+*!*			oException		  -	If the user cancelled or an error occurred, this will contain a
+*!*								reference to an Exception object containing information about what
+*!*								happened.  Otherwise this is NULL.
+*********************************************************************
+LPARAMETERS tcScope AS String, tcFormCaption AS String
+
+LOCAL loScope, ;
+	llSuccess, ;
+	loScopeForm AS FrmScopeFinder OF "C:\Work\VFP\Shared\Tools\Thor\Tools\Procs\Thor_Proc_ScopeProcessor.vcx", ;
+	loShape AS Shape, ;
+	loErrorInfo AS Exception
+
+*-- Create an object to return the scope information to the calling code.
+loScope = CREATEOBJECT( "Empty" )
+ADDPROPERTY( m.loScope, "cScope", SPACE(0) )
+ADDPROPERTY( m.loScope, "lScopeIsProject", .NULL. )
+ADDPROPERTY( m.loScope, "oException", .NULL. )
+
+tcScope = IIF( VARTYPE( m.tcScope ) = "C", ALLTRIM( m.tcScope ), SPACE(0) )
+tcFormCaption = IIF( VARTYPE( m.tcFormCaption ) = "C" AND NOT EMPTY( m.tcFormCaption ), ;
+		m.tcFormCaption, ccToolName )
+
+llSuccess = .T.
+
+*-- Determine what we are processing.
+DO CASE
+	CASE NOT EMPTY( m.tcScope ) ;
+			AND DIRECTORY( m.tcScope )
+		*-- A folder was passed, so process that.
+		loScope.cScope = m.tcScope
+		loScope.lScopeIsProject = .F.
+
+	CASE NOT EMPTY( m.tcScope ) ;
+			AND FILE( m.tcScope ) ;
+			AND UPPER( JUSTEXT( m.tcScope ) ) == "PJX"
+		*-- A project file was specified, so process all the files in
+		*-- that project.
+		loScope.cScope = m.tcScope
+		loScope.lScopeIsProject = .T.
+
+	OTHERWISE
+		*-- Prompt the developer for the scope of the process using a
+		*-- Thor form that simplifies selecting either a project or
+		*-- folder.
+		loScopeForm = EXECSCRIPT( _Screen.cThorDispatcher, ;
+				"Class= FrmScopeFinder from Thor_Proc_ScopeProcessor.vcx", m.tcFormCaption )
+
+		TRY
+			*-- Disable these 2 options, since this process always
+			*-- drills down into the project or folder, so these options
+			*-- are irrelevant.
+			loScopeForm.lProjectHomeDirectory = .F.
+			loScopeForm.chklProjectHomeDirectory.Enabled = .F.
+			loScopeForm.lSubDirectories = .F.
+			loScopeForm.chklSubDirectories.Enabled = .F.
+
+			*-- Because the form shows/hides the checkboxes based on
+			*-- the type of scope you select, setting Visible = .F. for
+			*-- them does nothing.  Create a shape that matches the
+			*-- surface of the form, and size it to completely cover
+			*-- the 2 checkboxes.
+			loScopeForm.AddObject( "shpHideSubfolderOptions", "Shape" )
+			loShape = m.loScopeForm.shpHideSubfolderOptions
+			loShape.BorderStyle = 0	&& Transparent
+			loShape.BackStyle = 1	&& Opaque
+			loShape.BackColor = m.loScopeForm.BackColor
+			loShape.Left = MIN( m.loScopeForm.chklProjectHomeDirectory.Left, m.loScopeForm.chklSubDirectories.Left )
+			loShape.Top = MIN( m.loScopeForm.chklProjectHomeDirectory.Top, m.loScopeForm.chklSubDirectories.Top )
+			loShape.Width = MAX( m.loScopeForm.chklProjectHomeDirectory.Width, m.loScopeForm.chklSubDirectories.Width )
+			loShape.Height = MAX( m.loScopeForm.chklProjectHomeDirectory.Height, m.loScopeForm.chklSubDirectories.Height )
+			loShape.Visible = .T.
+
+			loScopeForm.Show(1)
+
+			*-- If the form doesn't exist as this point, it's usually
+			*-- because the form was closed without clicking the "Go"
+			*-- button.
+			IF NOT VARTYPE( m.loScopeForm ) = "O"
+				ERROR "Process cancelled by user -- no scope selected for this process."
+			ENDIF
+
+			*-- Determine what scope was selected in the form.
+			DO CASE
+				CASE DIRECTORY( m.loScopeForm.cScope )
+					*-- Folder
+					loScope.cScope = m.loScopeForm.cScope
+					loScope.lScopeIsProject = .F.
+
+				CASE FILE( m.loScopeForm.cScope ) ;
+						AND UPPER( JUSTEXT( m.loScopeForm.cScope ) ) == "PJX"
+					*-- Project
+					loScope.cScope = m.loScopeForm.cScope
+					loScope.lScopeIsProject = .T.
+
+				OTHERWISE
+					*-- Don't know what, but it isn't valid.
+					ERROR "Selected scope is invalid for this process." + CHR(13) ;
+							+ "Scope: " + TRANSFORM( m.loScopeForm.cScope )
+			ENDCASE
+
+		CATCH TO loErrorInfo
+			llSuccess = .F.
+			loScope.oException = m.loErrorInfo
+		ENDTRY
+
+		*-- If the user cancels the form, it is already released, but
+		*-- if it still exists, release it now.
+		IF VARTYPE( m.loScopeForm ) = "O"
+			loScopeForm.Release()
+		ENDIF
+ENDCASE
+
+RETURN loScope
+ENDFUNC
+
+*********************************************************************
 PROTECTED FUNCTION GenerateMenuCode
 
 *!*	This function provides a simple way to generate the .MPR/.MPX files for a menu by specifying

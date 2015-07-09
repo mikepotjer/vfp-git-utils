@@ -33,9 +33,10 @@ This tool requires Git for Windows and some Thor Repository tools.
 		.Sort		   = 0 && the sort order for all items from the same Source, Category and Sub-Category
 
 		* For public tools, such as PEM Editor, etc.
-		.Version	   = '2015.5.12' && e.g., 'Version 7, May 18, 2011'
+		.Version	   = '2015.07.09' && e.g., 'Version 7, May 18, 2011'
 		.Author        = 'Mike Potjer'
-		.Link          = 'https://github.com/mikepotjer/vfp-git-utils'	&& 'http://www.optimalinternet.com/' && link to a page for this tool
+		*!* .Link          = 'https://github.com/mikepotjer/vfp-git-utils'	&& 'http://www.optimalinternet.com/' && link to a page for this tool
+		.Link          = 'https://bitbucket.org/mikepotjer/vfp-git-utils'	&& 'http://www.optimalinternet.com/' && link to a page for this tool
 		.VideoLink     = '' && link to a video for this tool
 
 		.OptionTool    = ccToolName
@@ -61,96 +62,28 @@ PROCEDURE ToolCode
 LPARAMETERS lxParam1
 
 LOCAL llSuccess, ;
-	lcScope, ;
-	llScopeIsProject, ;
+	loScope, ;
 	loScopeForm AS FrmScopeFinder OF "C:\Work\VFP\Shared\Tools\Thor\Tools\Procs\Thor_Proc_ScopeProcessor.vcx", ;
 	loErrorInfo AS Exception, ;
 	loGitUtilities AS cusGitUtilities OF Thor_Proc_GitUtilities.PRG
 
-lxParam1 = IIF( VARTYPE( m.lxParam1 ) = "C", ALLTRIM( m.lxParam1 ), SPACE(0) )
 llSuccess = .T.
 
+*-- Get a reference to our Git tools class.
+TRY
+	loGitUtilities = EXECSCRIPT( _Screen.cThorDispatcher, "Thor_Proc_GitUtilities" )
+
+CATCH TO loErrorInfo
+	llSuccess = .F.
+ENDTRY
+
 *-- Determine what we are processing.
-DO CASE
-	CASE NOT EMPTY( m.lxParam1 ) ;
-			AND DIRECTORY( m.lxParam1 )
-		*-- A folder was passed to this procedure, so process that.
-		lcScope = m.lxParam1
-		llScopeIsProject = .F.
-
-	CASE NOT EMPTY( m.lxParam1 ) ;
-			AND FILE( m.lxParam1 ) ;
-			AND UPPER( JUSTEXT( m.lxParam1 ) ) == "PJX"
-		*-- A project file was specified, so process all the files in
-		*-- that project.
-		lcScope = m.lxParam1
-		llScopeIsProject = .T.
-
-*!*		CASE EMPTY( m.lxParam1 ) ;
-*!*				AND _VFP.Projects.Count > 0
-*!*			lcScope = _VFP.ActiveProject.Name
-*!*			llScopeIsProject = .T.
-
-	OTHERWISE
-		*-- Prompt the developer for the scope of the process using a
-		*-- Thor form that simplifies selecting either a project or
-		*-- folder.
-		loScopeForm = EXECSCRIPT( _Screen.cThorDispatcher, ;
-				"Class= FrmScopeFinder from Thor_Proc_ScopeProcessor.vcx", TOOL_PROMPT )
-
-		TRY
-			*-- Disable these 2 options, since this process always
-			*-- drills down into the project or folder, so these options
-			*-- are irrelevant.
-			loScopeForm.lProjectHomeDirectory = .F.
-			loScopeForm.chklProjectHomeDirectory.Enabled = .F.
-			loScopeForm.lSubDirectories = .F.
-			loScopeForm.chklSubDirectories.Enabled = .F.
-
-			loScopeForm.Show(1)
-
-			*-- If the form doesn't exist as this point, it's usually
-			*-- because the form was closed without clicking the "Go"
-			*-- button.
-			IF NOT VARTYPE( m.loScopeForm ) = "O"
-				ERROR "Process cancelled by user -- no scope selected for this process."
-			ENDIF
-
-			lcScope = m.loScopeForm.cScope
-
-			*-- Determine what scope was selected in the form.
-			DO CASE
-				CASE DIRECTORY( m.lcScope )
-					*-- Folder
-					llScopeIsProject = .F.
-
-				CASE FILE( m.lcScope ) ;
-						AND UPPER( JUSTEXT( m.lcScope ) ) == "PJX"
-					*-- Project
-					llScopeIsProject = .T.
-
-				OTHERWISE
-					*-- Don't know what, but it isn't valid.
-					ERROR "Selected scope is invalid for this process." + CHR(13) ;
-							+ "Scope: " + TRANSFORM( m.lcScope )
-			ENDCASE
-
-		CATCH TO loErrorInfo
-			llSuccess = .F.
-		ENDTRY
-
-		loScopeForm.Release()
-ENDCASE
-
 IF m.llSuccess
-	*-- We're ready to process, so get a reference to our Git tools
-	*-- class.
-	TRY
-		loGitUtilities = EXECSCRIPT( _Screen.cThorDispatcher, "Thor_Proc_GitUtilities" )
-
-	CATCH TO loErrorInfo
+	loScope = m.loGitUtilities.GetProcessScope( m.lxParam1, TOOL_PROMPT )
+	IF EMPTY( m.loScope.cScope )
 		llSuccess = .F.
-	ENDTRY
+		loErrorInfo = m.loScope.oException
+	ENDIF
 ENDIF
 
 *-- Here's where the processing actually occurs.
@@ -158,22 +91,22 @@ DO CASE
 	CASE NOT m.llSuccess
 		*-- Something failed already, so nothing to do.
 
-	CASE m.llScopeIsProject
+	CASE m.loScope.lScopeIsProject
 		*-- Process a project.
-		WAIT WINDOW "Restoring timestamps for files in project" + CHR(13) + m.lcScope NOWAIT NOCLEAR
-		llSuccess = m.loGitUtilities.RestoreProjectTimestamps( @m.loErrorInfo, m.lcScope )
+		WAIT WINDOW "Restoring timestamps for files in project" + CHR(13) + m.loScope.cScope NOWAIT NOCLEAR
+		llSuccess = m.loGitUtilities.RestoreProjectTimestamps( @m.loErrorInfo, m.loScope.cScope )
 
 	OTHERWISE
 		*-- Processing a folder.
-		WAIT WINDOW "Restoring timestamps for files in folder" + CHR(13) + m.lcScope NOWAIT NOCLEAR
-		llSuccess = m.loGitUtilities.RestoreRepoTimestamps( @m.loErrorInfo, m.lcScope )
+		WAIT WINDOW "Restoring timestamps for files in folder" + CHR(13) + m.loScope.cScope NOWAIT NOCLEAR
+		llSuccess = m.loGitUtilities.RestoreRepoTimestamps( @m.loErrorInfo, m.loScope.cScope )
 ENDCASE
 
 WAIT CLEAR
 
 *-- Display the results.
 IF m.llSuccess
-	MESSAGEBOX( "Timestamps successfully updated for" + CHR(13) + m.lcScope, 64, TOOL_PROMPT, 3000 )
+	MESSAGEBOX( "Timestamps successfully updated for" + CHR(13) + m.loScope.cScope, 64, TOOL_PROMPT, 3000 )
 ELSE
 	MESSAGEBOX( m.loErrorInfo.Message, 16, TOOL_PROMPT )
 ENDIF

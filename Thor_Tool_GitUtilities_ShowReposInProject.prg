@@ -32,9 +32,10 @@ This tool requires Git for Windows and some Thor Repository tools.
 		.Sort		   = 0 && the sort order for all items from the same Source, Category and Sub-Category
 
 		* For public tools, such as PEM Editor, etc.
-		.Version	   = '2015.5.12' && e.g., 'Version 7, May 18, 2011'
+		.Version	   = '2015.05.12' && e.g., 'Version 7, May 18, 2011'
 		.Author        = 'Mike Potjer'
-		.Link          = 'https://github.com/mikepotjer/vfp-git-utils'	&& 'http://www.optimalinternet.com/' && link to a page for this tool
+		*!* .Link          = 'https://github.com/mikepotjer/vfp-git-utils'	&& 'http://www.optimalinternet.com/' && link to a page for this tool
+		.Link          = 'https://bitbucket.org/mikepotjer/vfp-git-utils'	&& 'http://www.optimalinternet.com/' && link to a page for this tool
 		.VideoLink     = '' && link to a video for this tool
 
 	ENDWITH

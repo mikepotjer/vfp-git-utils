@@ -2,8 +2,8 @@ Lparameters toUpdateInfo
 
 Local lcNote
 With toUpdateInfo
-    .VersionNumber  = 'v2015.07.08'
-    .VersionDate    = Date(2015, 7, 8)
+    .VersionNumber  = 'v2015.07.09'
+    .VersionDate    = Date(2015, 7, 9)
     .SourceFileUrl  = 'https://bitbucket.org/mikepotjer/vfp-git-utils/downloads/GitUtils.zip'
     .LinkPrompt     = 'Git Utilities for VFP Home Page'
     .Link           = 'https://bitbucket.org/mikepotjer/vfp-git-utils'
@@ -15,8 +15,12 @@ The Git Utilities ease the process of working with VFP's binary files when using
 These utilities require the Thor repository, FoxBin2Prg, Git for Windows, and the Windows Scripting Host.
 
 ==== Change History ====
+2015.07.09
+ - Correct a bug in the scope selection code that resulted in a VFP error if the form was cancelled.
+ - Refactor to move the scope selection code to the main Git Utilities class so it can be shared by all the individual tools, rather than repeating it in every tool.
+
 2015.07.08
- - Made some minor changes for including this project in Thor's "Check for Updates" feature.
+ - Make some minor changes for including this project in Thor's "Check for Updates" feature.
 
 2015.06.10
  - Enhance the post-checkout synch process to restore file timestamps, if applicable.
