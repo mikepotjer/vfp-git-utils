@@ -1,13 +1,24 @@
 Lparameters toUpdateInfo
 
-Local lcNote
+Local lcNote, ;
+	lcRegisterWithThor
+
 With toUpdateInfo
-    .VersionNumber  = 'v2015.07.09'
-    .VersionDate    = Date(2015, 7, 9)
-    .SourceFileUrl  = 'https://bitbucket.org/mikepotjer/vfp-git-utils/downloads/GitUtils.zip'
-    .LinkPrompt     = 'Git Utilities for VFP Home Page'
-    .Link           = 'https://bitbucket.org/mikepotjer/vfp-git-utils'
+    .ApplicationName = 'Git Utilities'
+    .Component       = 'No'
+    .ToolName        = 'Thor_Tool_ThorInternalRepository'
+    .VersionNumber   = 'v2015.07.09'
+    .VersionDate     = Date(2015, 7, 9)
+    .SourceFileUrl   = 'https://bitbucket.org/mikepotjer/vfp-git-utils/downloads/GitUtils.zip'
+    .LinkPrompt      = 'Git Utilities for VFP Home Page'
+    .Link            = 'https://bitbucket.org/mikepotjer/vfp-git-utils'
 EndWith
+
+Text to lcRegisterWithThor NoShow TextMerge
+    Messagebox('From the Thor Launcher, see "Applications -> Git Utilities"', 0 ,"Git Utilities installed", 5000)
+EndText
+
+ADDPROPERTY( toUpdateInfo, 'RegisterWithThor', lcRegisterWithThor )
 
 Text to lcNote NoShow
 The Git Utilities ease the process of working with VFP's binary files when using Git as the source control provider, as well as making it easier to work with .PJX projects which contain files from multiple Git repositories.  See the tool home page for more information.
