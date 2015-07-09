@@ -2496,6 +2496,8 @@ LOCAL laFileList[1], ;
 	lcMessage, ;
 	lcRepository, ;
 	lcSetNotify, ;
+	lcErrorMessages, ;
+	loErrorInfo AS Exception, ;
 	llSuccess, ;
 	xx
 
@@ -2538,6 +2540,8 @@ ENDIF
 lcSetNotify = SET("Notify")
 SET NOTIFY OFF
 
+lcErrorMessages = SPACE(0)
+
 lcMessage = "Recompiling " + ALLTRIM( TRANSFORM( ALEN( laFileList, 1 ), "999,999" ) ) ;
 		+ " program files for repository:" + CHR(13) + m.lcRepository + CHR(13) ;
 		+ "Please wait..."
@@ -2554,8 +2558,27 @@ TRY
 		lcFullFileName = FULLPATH( ADDBS( m.lcRepository ) + laFileList[m.xx] )
 
 		*-- Attempt to recompile this program.
-		COMPILE ( m.lcFullFileName )
+		*-- MJP -- 07/09/2015 11:52:38 AM
+		*-- Trap individual compile errors, but allow processing to
+		*-- continue so that as many files as possible will be compiled.
+		TRY
+			COMPILE ( m.lcFullFileName )
+
+		CATCH TO loErrorInfo
+			*-- Add this error message to any prior ones we collected.
+			*-- the file name so that we figure out where the problem
+			*-- came from, and how we might solve it.
+			lcErrorMessages = lcErrorMessages + CHR(13) + CHR(13) ;
+					+ m.loErrorInfo.Message + CHR(13) ;
+					+ "   File: " + m.lcFullFileName
+		ENDTRY
 	ENDFOR
+
+	*-- If any of the compiles failed, generate a message which includes
+	*-- the repository name.
+	IF NOT EMPTY( m.lcErrorMessages )
+		ERROR "Unable to compile all files in repository: " + m.lcRepository + m.lcErrorMessages
+	ENDIF
 
 CATCH TO toErrorInfo
 	llSuccess = .F.
