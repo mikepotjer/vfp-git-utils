@@ -7,8 +7,8 @@ With toUpdateInfo
     .ApplicationName = 'Git Utilities'
     .Component       = 'No'
     .ToolName        = 'Thor_Tool_ThorInternalRepository'
-    .VersionNumber   = 'v2015.07.09'
-    .VersionDate     = Date(2015, 7, 9)
+    .VersionNumber   = 'v2015.07.24'
+    .VersionDate     = Date(2015, 7, 24)
     .SourceFileUrl   = 'https://bitbucket.org/mikepotjer/vfp-git-utils/downloads/GitUtils.zip'
     .LinkPrompt      = 'Git Utilities for VFP Home Page'
     .Link            = 'https://bitbucket.org/mikepotjer/vfp-git-utils'
@@ -26,6 +26,10 @@ The Git Utilities ease the process of working with VFP's binary files when using
 These utilities require the Thor repository, FoxBin2Prg, Git for Windows, and the Windows Scripting Host.
 
 ==== Change History ====
+2015.07.24
+ - Modify the recompile process for the post-checkout file synchronization to attempt to recompile all files in a repository, even after one of them fails to compile.
+ - Update the error messaging for the recompile process to include the name of all the files that fail, and the name of the repository where the error occurs.
+
 2015.07.09
  - Correct a bug in the scope selection code that resulted in a VFP error if the form was cancelled.
  - Refactor to move the scope selection code to the main Git Utilities class so it can be shared by all the individual tools, rather than repeating it in every tool.
