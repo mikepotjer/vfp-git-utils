@@ -85,10 +85,15 @@ prepare VFP files to be committed to their respective repositories.
  - In the Git Utilities options, if you have specified that timestamp files are be generated,
    then the timestamp file for each repository being processed will be updated accordingly.
 
-**Please Note:** This tool assumes that both the VFP binary files and their corresponding text
+**NOTE #1:** This tool assumes that both the VFP binary files and their corresponding text
 files are being committed to the Git repositories (with the exception of the .PJX file).  If
 only binary or only text files are being committed, then this tool will not be very helpful,
-and may even undo some legitimate changes, and therefore should not be used.
+and may even undo some legitimate changes, and therefore should not be used.  
+
+**NOTE #2:** When this tool reverts binary files that haven't really changed, Git is used to replace
+those files.  That means that any databases, tables, or classes which are being reverted need to be
+closed/released before running this utility.  Files that are still open can cause this utility to
+"hang", preventing the process from completing.
 
 #### `Thor_Tool_GitUtilities_PostCheckoutSynch.PRG`
 This tool appears under the Git Utilities menu as **Post-checkout file synchronization**.  It

@@ -1,31 +1,34 @@
-Lparameters toUpdateInfo
+LPARAMETERS toUpdateInfo
 
-Local lcNote, ;
+LOCAL lcNote, ;
 	lcRegisterWithThor
 
-With toUpdateInfo
+WITH toUpdateInfo
     .ApplicationName = 'Git Utilities'
     .Component       = 'No'
     .ToolName        = 'Thor_Tool_ThorInternalRepository'
-    .VersionNumber   = 'v2015.07.24'
-    .VersionDate     = Date(2015, 7, 24)
+    .VersionNumber   = 'v2015.07.27'
+    .VersionDate     = DATE(2015, 7, 27)
     .SourceFileUrl   = 'https://bitbucket.org/mikepotjer/vfp-git-utils/downloads/GitUtils.zip'
     .LinkPrompt      = 'Git Utilities for VFP Home Page'
     .Link            = 'https://bitbucket.org/mikepotjer/vfp-git-utils'
-EndWith
+ENDWITH
 
-Text to lcRegisterWithThor NoShow TextMerge
-    Messagebox('From the Thor Launcher, see "Applications -> Git Utilities"', 0 ,"Git Utilities installed", 5000)
-EndText
+TEXT TO lcRegisterWithThor NOSHOW TEXTMERGE
+    MESSAGEBOX('From the Thor Launcher, see "Applications -> Git Utilities"', 0 ,"Git Utilities installed", 5000)
+ENDTEXT
 
 ADDPROPERTY( toUpdateInfo, 'RegisterWithThor', lcRegisterWithThor )
 
-Text to lcNote NoShow
+TEXT TO lcNote NOSHOW
 The Git Utilities ease the process of working with VFP's binary files when using Git as the source control provider, as well as making it easier to work with .PJX projects which contain files from multiple Git repositories.  See the tool home page for more information.
 
 These utilities require the Thor repository, FoxBin2Prg, Git for Windows, and the Windows Scripting Host.
 
 ==== Change History ====
+2015.07.27
+ - Enhance the error handling for executing external commands to do a better job of collecting error info, eliminating a scenario where a blank error message was being generated.
+
 2015.07.24
  - Modify the recompile process for the post-checkout file synchronization to attempt to recompile all files in a repository, even after one of them fails to compile.
  - Update the error messaging for the recompile process to include the name of all the files that fail, and the name of the repository where the error occurs.
@@ -53,9 +56,9 @@ These utilities require the Thor repository, FoxBin2Prg, Git for Windows, and th
 
 2015.05.12
  - Initial public release of the Git Utilities.
-EndText
+ENDTEXT
 
-AddProperty(toUpdateInfo, 'Notes', lcNote)
+ADDPROPERTY( toUpdateInfo, 'Notes', lcNote )
 
-Execscript(_Screen.cThorDispatcher, 'Result=', toUpdateInfo)
-Return toUpdateInfo
+EXECSCRIPT( _Screen.cThorDispatcher, 'Result=', toUpdateInfo )
+RETURN toUpdateInfo

@@ -22,6 +22,8 @@ IF PCOUNT() = 1 ;
 		Text to .Description NoShow && a description for the tool
 Prepares all VFP binary files in a selected repository, or in the Git repositories of the selected project, for commit.  Binary files that have changed due to a recompile, but not because of a code change, are also reset.
 
+NOTE: Make sure that any VFP binary files which have changed are closed before running this process.  This process can "hang" if it attempts to replace a file that is still open.
+
 This tool requires Git for Windows, FoxBin2Prg, and some Thor Repository tools.
 		EndText 
 		.StatusBarText = .Summary

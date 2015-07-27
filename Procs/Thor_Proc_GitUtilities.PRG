@@ -255,12 +255,6 @@ tcOutput = SPACE(0)
 
 loShell = CREATEOBJECT( "WScript.Shell" )
 
-*!* MJP -- Removed 04/30/2015 10:11:14
-*!* *-- Make sure the Sleep API function is declared, which is used later.
-*!* IF NOT This.IsAPIDeclared( "Sleep" )
-*!* 	DECLARE Integer Sleep IN WIN32API Integer
-*!* ENDIF
-
 *-- If a repository was specified, make sure it is set as the new current
 *-- folder.
 lcDefaultPath = This.SetDefaultFolder( m.tcRepository )
@@ -280,39 +274,9 @@ lcOutputFile = ADDBS( SYS(2023) ) + "Output" + SYS(2015) + ".TXT"
 lcCommand = "%comspec% /c " + m.tcCommand + [ > "] + m.lcOutputFile + ["]
 
 TRY
-	*!* MJP -- Removed 04/30/2015 10:11:29
 	*-- There is no easy way to hide the command window using Exec(),
-	*-- and possibly no way at all to hide it from VFP, so switch to
-	*-- the Run() method.
-	*!* *-- Attempt to execute the specified command.
-	*!* loExec = m.loShell.Exec( m.tcCommand )
-
-	*!* DO CASE
-	*!* 	CASE NOT m.loExec.StdOut.AtEndOfStream
-	*!* 		*-- The command executed successfully, and generated a
-	*!* 		*-- non-empty output stream.  Save the stream to the output
-	*!* 		*-- parameter, if it was passed.
-	*!* 		tcOutput = m.loExec.StdOut.ReadAll()
-
-	*!* 	CASE NOT m.loExec.StdErr.AtEndOfStream
-	*!* 		*-- The command failed and generated an error output stream.
-	*!* 		*-- Save the error and the command we were attempting to
-	*!* 		*-- execute in the error object.
-	*!* 		toErrorInfo = CREATEOBJECT( "Exception" )
-	*!* 		toErrorInfo.Message = m.loExec.StdErr.ReadAll()
-	*!* 		toErrorInfo.LineContents = m.tcCommand
-	*!* 		llSuccess = .F.
-
-	*!* 	OTHERWISE
-	*!* 		*-- The command succeeded, but there is no output to report.
-	*!* ENDCASE
-
-	*!* *-- If the command is still running, wait for it to complete before
-	*!* *-- continuing.
-	*!* DO WHILE m.loExec.Status = 0
-	*!* 	Sleep( 100 )
-	*!* ENDDO
-
+	*-- and possibly no way at all to hide it from VFP, so the Run()
+	*-- method is used here.
 	*-- Execute the command, hiding the command window, and waiting
 	*-- for the command to complete before moving on.
 	lnReturnError = m.loShell.Run( m.lcCommand, 0, .T. )
@@ -326,11 +290,71 @@ TRY
 		*-- An error occurred.  Generate an exception object to report
 		*-- whatever information we have available.
 		toErrorInfo = CREATEOBJECT( "Exception" )
-		toErrorInfo.Message = IIF( FILE( m.lcOutputFile ), FILETOSTR( m.lcOutputFile ), ;
-				"(No command output)" )
 		toErrorInfo.LineContents = m.tcCommand
 		toErrorInfo.Details = "Error " + TRANSFORM( m.lnReturnError )
 		llSuccess = .F.
+
+		*!* *{ MJP -- 07/27/2015 08:52:39 - Begin
+		*-- We don't always get error information back from a command,
+		*-- so make sure we generate some useful information.
+		*!* toErrorInfo.Message = IIF( FILE( m.lcOutputFile ), FILETOSTR( m.lcOutputFile ), ;
+		*!* 		"(No command output)" )
+		toErrorInfo.Message = IIF( FILE( m.lcOutputFile ), FILETOSTR( m.lcOutputFile ), SPACE(0) )
+
+		*-- If no error information was collected in the output file,
+		*-- re-run the command using Exec(), which will allow us to
+		*-- retrieve the output sent to the command window.
+		IF EMPTY( m.toErrorInfo.Message )
+			 *-- Make sure the Sleep API function is declared, which
+			 *-- is used later.
+			 IF NOT This.IsAPIDeclared( "Sleep" )
+			 	DECLARE Integer Sleep IN WIN32API Integer
+			 ENDIF
+
+			*-- Attempt to execute the specified command again, this
+			*-- time using the Exec() method.  This will cause a command
+			*-- window to flash on the screen, but since we only do
+			*-- this when a command has already failed, it shouldn't
+			*-- happen very often.
+			loExec = m.loShell.Exec( m.lcCommand )
+
+			DO CASE
+				CASE NOT m.loExec.StdOut.AtEndOfStream
+					*-- The command executed successfully, and generated
+					*-- a non-empty output stream.  This is unlikely,
+					*-- since the same command failed just before this,
+					*-- but save the stream to the output parameter,
+					*-- if it was passed, and set the success flag.
+					tcOutput = m.loExec.StdOut.ReadAll()
+					llSuccess = .T.
+
+				CASE NOT m.loExec.StdErr.AtEndOfStream
+					*-- The command failed and generated an error output
+					*-- stream.  Save the error in the error object.
+					toErrorInfo.Message = m.loExec.StdErr.ReadAll()
+
+				OTHERWISE
+					*-- The command succeeded, and there is no output
+					*-- to report.  This is unlikely, since the same
+					*-- command failed just before this, but set the
+					*-- success flag.
+					llSuccess = .T.
+			ENDCASE
+
+			*-- If the command is still running, wait for it to complete
+			*-- before continuing.
+			DO WHILE m.loExec.Status = 0
+				Sleep( 100 )
+			ENDDO
+		ENDIF
+
+		*-- Include the command that was executing, and the return value
+		*-- from the Run() method in the message.  If we still didn't
+		*-- get an error message, generate something generic.
+		toErrorInfo.Message = "Error executing command: " + m.tcCommand + CHR(13) + CHR(13) ;
+				+ EVL( m.toErrorInfo.Message, "A general error occurred." ) + CHR(13) + CHR(13) ;
+				+ "Return Value: " + TRANSFORM( m.lnReturnError )
+		*!* *} MJP -- 07/27/2015 08:52:39 - End
 	ENDIF
 
 CATCH TO toErrorInfo
