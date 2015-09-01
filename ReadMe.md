@@ -16,6 +16,12 @@ The following items are required to take full advantage of the Git utilities:
  - [Git for Windows](http://git-scm.com/download/win) - When installing Git for Windows, at the step
    entitled **Adjusting your Path environment**, select the second option "Use Git from the Windows
    Command Prompt".  
+   **NOTE:** Beginning with the 2.x versions of Git for Windows, there are 32- and 64-bit versions.
+   You MUST have the 32-bit version of Git for Windows installed in order for these utilities to
+   work, even on 64-bit Windows, because VFP is a 32-bit app, and is unable to run 64-bit Git from
+   the command line.  It appears that both the 32-bit and 64-bit versions of Git for Windows can be
+   installed on the same PC, but in my testing, the 64-bit install uninstalled the 32-bit version,
+   so the 32-bit version must be installed LAST.
  - Windows Scripting Host - This is installed as part of Windows, but system administrators will
    sometimes disable it on the PCs on their networks.  
 
