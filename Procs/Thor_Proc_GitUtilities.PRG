@@ -618,7 +618,7 @@ FUNCTION FetchRepoStatus
 *!*		 tcRepository (O) -	The full path to the repository folder whose status information is to
 *!*							be retrieved.  If omitted, the current folder will be used as the
 *!*							repository.
-*!*		tcCursorName (O) -	The name to use for the cursor that returns the status info for the
+*!*		 tcCursorName (O) -	The name to use for the cursor that returns the status info for the
 *!*							repository.  It is not required to specify a cursor name, but if no
 *!*							name is specified, a variable should be passed here by reference to
 *!*							receive the name of the cursor generated.
@@ -636,6 +636,7 @@ LOCAL llSuccess, ;
 	xx, ;
 	lcIndexStatus, ;
 	lcWorkTreeStatus, ;
+	llMergeConflict, ;
 	lcFileName, ;
 	lcOldFileName, ;
 	lcFileExtension
@@ -659,12 +660,14 @@ USE IN SELECT( m.tcCursorName )
 *-- 	GS_WorkTreeStatus -	The status of the file in the working tree, IOW files that are
 *--							"unstaged".  See the git status documentation for details.  Uses
 *--							the same values as GS_IndexStatus.
+*--		GS_MergeConflict  -	Indicates whether there is a merge conflict for this file.
 CREATE CURSOR ( m.tcCursorName ) ;
 	( GS_FileName V(254), ;
 		GS_OldFileName V(254), ;
 		GS_FileExtension C(10), ;
 		GS_IndexStatus C(1), ;
-		GS_WorkTreeStatus C(1) )
+		GS_WorkTreeStatus C(1), ;
+		GS_MergeConflict L )
 
 *-- Retrieve the git status using the static parseable format for the
 *-- output.
@@ -685,6 +688,11 @@ FOR xx = 1 TO m.lnCount
 	*-- The first 2 characters are the status codes.
 	lcIndexStatus = LEFT( laLines[m.xx], 1 )
 	lcWorkTreeStatus = SUBSTR( laLines[m.xx], 2, 1 )
+
+	*-- MJP -- 09/18/2015 03:07:24 PM
+	*-- Check for a merge conflict on this item.  See the git status
+	*-- documentation for an explanation of what these codes mean.
+	llMergeConflict = INLIST( m.lcIndexStatus + m.lcWorkTreeStatus, "DD", "AU", "UD", "UA", "DU", "AA", "UU" )
 
 	*-- Check for file name changes.
 	IF OCCURS( "->", laLines[m.xx] ) = 0
@@ -716,16 +724,103 @@ FOR xx = 1 TO m.lnCount
 			GS_OldFileName, ;
 			GS_FileExtension, ;
 			GS_IndexStatus, ;
-			GS_WorkTreeStatus ) ;
+			GS_WorkTreeStatus, ;
+			GS_MergeConflict ) ;
 		VALUES ;
 		( m.lcFileName, ;
 			m.lcOldFileName, ;
 			UPPER( m.lcFileExtension ), ;
 			m.lcIndexStatus, ;
-			m.lcWorkTreeStatus )
+			m.lcWorkTreeStatus, ;
+			m.llMergeConflict )
 ENDFOR
 
 RETURN m.llSuccess
+ENDFUNC
+
+*********************************************************************
+FUNCTION GetRepoStatistics
+
+*!*	This method populates a data object with some statistics about the specified repository.
+
+*!*	PARAMETERS:
+*!*		  toErrorInfo (O) -	A variable passed by reference to store any error info returned from
+*!*							this method.  This will be returned as an Exception object.  This
+*!*							parameter is not required, but recommended.
+*!*		 tcRepository (O) -	The full path to the repository folder whose statistics are to be
+*!*							retrieved.  If omitted, the current folder will be used as the repository.
+
+*!*	RETURNS: Object
+*!*		If an error occurs, returns NULL, otherwise returns a data object containing statistics for
+*!*		the specified repository.
+
+*!*		The properties of the data object are:
+*!*			StagedChanges	  -	The total number of all changes that are staged for commit.  This
+*!*								includes files that have merge conflicts.
+*!*			UnstagedChanges	  -	The total number of all changes that are being tracked by the repository,
+*!*								but are not staged for commit.  This includes files that have merge
+*!*								conflicts.
+*!*			UntrackedItems	  -	The total number of items that are not being tracked by the repository,
+*!*								but are not in any ignore list.
+*!*			MergeConflicts	  -	If a merge is in effect on the repository, this will contain the total
+*!*								number of merge conflicts that have not be resolved.
+*********************************************************************
+LPARAMETERS toErrorInfo AS Exception, tcRepository AS String
+
+LOCAL loGitStats, ;
+	lcStatusAlias, ;
+	lcAggregateAlias, ;
+	lnWorkArea
+
+lcStatusAlias = "C_GitRepoStatus" + SYS(2015)
+lcAggregateAlias = "C_GitRepoStatistics" + SYS(2015)
+
+lnWorkArea = SELECT()
+
+IF This.FetchRepoStatus( @m.toErrorInfo, m.tcRepository, m.lcStatusAlias )
+	TRY
+		*-- Gather statistics about the items in the repository.  There
+		*-- are 6 codes that indicate some kind of change to a tracked
+		*-- item, and only 3 status values that indicate something else,
+		*-- so I went with the shorter list for some of these.
+		SELECT SUM( IIF( INLIST( GS_IndexStatus, "?", "!", " " ), 0, 1 ) ) AS StagedChanges, ;
+				SUM( IIF( INLIST( GS_WorkTreeStatus, "?", "!", " " ), 0, 1 ) ) AS UnstagedChanges, ;
+				SUM( IIF( GS_IndexStatus = "?" OR GS_WorkTreeStatus = "?", 1, 0 ) ) AS UntrackedItems, ;
+				SUM( IIF( GS_MergeConflict, 1, 0 ) ) AS MergeConflicts ;
+			FROM ( m.lcStatusAlias ) ;
+			INTO CURSOR ( m.lcAggregateAlias ) NOFILTER
+
+		SELECT ( m.lcAggregateAlias )
+
+		*-- If the status cursor contains no items, the aggregate cursor
+		*-- will only contain NULL values, so generate a BLANK data
+		*-- object instead, which is a more accurate result.
+		*-- Note that we could just create an object and add empty
+		*-- properties to it when there is no status data, but that
+		*-- code would be more complicated to maintain if we ever change
+		*-- the stats that are being gathered.
+		IF RECCOUNT( m.lcStatusAlias ) = 0
+			SCATTER BLANK NAME m.loGitStats
+		ELSE
+			SCATTER NAME m.loGitStats
+		ENDIF
+
+	CATCH TO toErrorInfo
+		*-- Abort if an error occurs getting the aggregate amounts.
+		loGitStats = .NULL.
+	ENDTRY
+ELSE
+	*-- The repository status could not be retrieved, so abort.
+	loGitStats = .NULL.
+ENDIF
+
+*-- Cleanup cursors created here.
+USE IN SELECT( m.lcStatusAlias )
+USE IN SELECT( m.lcAggregateAlias )
+
+SELECT ( m.lnWorkArea )
+
+RETURN m.loGitStats
 ENDFUNC
 
 *********************************************************************
@@ -758,7 +853,8 @@ LOCAL llSuccess, ;
 	lcProjectFoldersAlias, ;
 	lcSQL, ;
 	lcFolderPath, ;
-	lcBranchName
+	lcBranchName, ;
+	loRepoStatistics
 
 llSuccess = .T.
 
@@ -850,8 +946,16 @@ IF m.llSuccess
 	*-- MJP -- 04/29/2015 05:20:43 PM
 	*-- Add a field to store the current branch for each repo, and make
 	*-- the cursor read/write so we can populate the field.
+	*-- MJP -- 09/18/2015 04:12:33 PM
+	*-- Add fields to store some statistics about each repository,
+	*-- making this cursor a little more useful for getting an overview
+	*-- of the status of the project.
 	SELECT DISTINCT PF_GitRepository, ;
-			CAST( SPACE(0) AS V(254) ) AS PF_GitCurrentBranch ;
+			CAST( SPACE(0) AS V(254) ) AS PF_GitCurrentBranch, ;
+			CAST( .NULL. AS I ) AS PF_StagedChanges, ;
+			CAST( .NULL. AS I ) AS PF_UnstagedChanges, ;
+			CAST( .NULL. AS I ) AS PF_MergeConflicts, ;
+			CAST( .NULL. AS I ) AS PF_UntrackedItems ;
 		FROM ( m.lcProjectFoldersAlias ) ;
 		WHERE NOT EMPTY( PF_GitRepository ) ;
 		INTO CURSOR ( m.tcCursorName ) READWRITE
@@ -872,6 +976,22 @@ IF m.llSuccess
 				REPLACE PF_GitCurrentBranch WITH RTRIM( m.lcBranchName ) ;
 						IN ( m.tcCursorName )
 			ENDIF
+
+			*{ MJP -- 09/18/2015 04:14:21 PM - Begin
+			*-- Attempt to get some stats for the current repository.
+			*-- If this fails, leave the statistic fields set to their
+			*-- default value of NULL to indicate that the information
+			*-- could not be retrieved.  We won't abort this method if
+			*-- the stats can't be retrieved, though.
+			loRepoStatistics = This.GetRepoStatistics( .NULL., PF_GitRepository )
+			IF NOT ISNULL( m.loRepoStatistics )
+				REPLACE PF_StagedChanges WITH m.loRepoStatistics.StagedChanges, ;
+						PF_UnstagedChanges WITH m.loRepoStatistics.UnstagedChanges, ;
+						PF_MergeConflicts WITH m.loRepoStatistics.MergeConflicts, ;
+						PF_UntrackedItems WITH m.loRepoStatistics.UntrackedItems ;
+						IN ( m.tcCursorName )
+			ENDIF
+			*} MJP -- 09/18/2015 04:14:21 PM - End
 		ENDSCAN
 		GO TOP
 	ENDIF
