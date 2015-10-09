@@ -7,15 +7,16 @@ WITH toUpdateInfo
     .ApplicationName = 'Git Utilities'
     .Component       = 'No'
     .ToolName        = 'Thor_Tool_ThorInternalRepository'
-    .VersionNumber   = 'v2015.07.27'
-    .VersionDate     = DATE(2015, 7, 27)
+    .VersionNumber   = 'v2015.10.09'
+    .VersionDate     = DATE(2015, 10, 9)
     .SourceFileUrl   = 'https://bitbucket.org/mikepotjer/vfp-git-utils/downloads/GitUtils.zip'
     .LinkPrompt      = 'Git Utilities for VFP Home Page'
     .Link            = 'https://bitbucket.org/mikepotjer/vfp-git-utils'
 ENDWITH
 
 TEXT TO lcRegisterWithThor NOSHOW TEXTMERGE
-    MESSAGEBOX('From the Thor Launcher, see "Applications -> Git Utilities"', 0 ,"Git Utilities installed", 5000)
+    MESSAGEBOX('From the Thor Launcher, see "Applications -> Git Utilities"' + CHR(13) ;
+        + SPACE(5) + 'and "Applications -> FoxBin2Prg"', 0 ,"Git Utilities installed", 5000)
 ENDTEXT
 
 ADDPROPERTY( toUpdateInfo, 'RegisterWithThor', lcRegisterWithThor )
@@ -26,6 +27,11 @@ The Git Utilities ease the process of working with VFP's binary files when using
 These utilities require the Thor repository, FoxBin2Prg, Git for Windows, and the Windows Scripting Host.
 
 ==== Change History ====
+2015.10.09
+- Modify the list of repositories in a project to include totals for staged and unstaged changes, untracked files, and merge conflicts.
+- Add a tool which will create and populate a table from a FoxBin2Prg DB2 file created with the setting DBF_Conversion_Support: 4.
+- Update the ReadMe file (shown on the tool homepage) to document the new features, and include additional information about the Prepare for Git Commit tool.
+
 2015.07.27
  - Enhance the error handling for executing external commands to do a better job of collecting error info, eliminating a scenario where a blank error message was being generated.
 
