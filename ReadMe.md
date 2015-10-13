@@ -86,18 +86,21 @@ prepare VFP files to be committed to their respective repositories.
    The FoxBin2Prg configuration settings determine which binary files have text files generated
    for them, and how the file is generated.  
    **Note:** Untracked files (those that are new and unstaged) are ignored.  For new binary files
-   which have not been committed to the repository yet, the text files are only generated if the
-   binary files are *staged* in Git.     
+   which have not been committed to the repository yet, a text file is only generated if the primary
+   binary file (VCX, SCX, MNX, FRX, LBX, DBF, DBC) is *staged* in Git.     
  - For any binary file that has changed because VFP generated new object code, but the source code
    has *not* changed (the text file is still the same), the changes to the binary file will be
    reverted.
+ - *(New - 2015-10-12)* If the primary binary file (VCX, SCX, MNX, FRX, LBX, DBF, DBC) is *staged*
+   in Git, but the secondary file(s) (VCT, SCT, etc.) and/or the text file are still untracked
+   (haven't been added to the repository yet), then those untracked files will be added to the
+   repository automatically.  This causes those files to be staged for commit, and timestamps will
+   be saved for them if you are using that option.
  - In the Git Utilities options, if you have specified that timestamp files are be generated,
    then the timestamp file for each repository being processed will be updated accordingly.  
    **Note:** Untracked files (those that are new and unstaged) are ignored.  For new files which
    have not been committed to the repository yet, timestamps are only saved for the new files that
-   have been *staged* in Git.  Sometimes this means that you will need to run the prepare for commit
-   process twice: once to generate new text files, then stage the text files and run this a second
-   time to store the timestamps for the new text files.
+   have been *staged* in Git.
 
 **NOTE #1:** This tool assumes that both the VFP binary files and their corresponding text
 files are being committed to the Git repositories (with the exception of the .PJX file).  If

@@ -44,6 +44,14 @@ NOTES:
 
 CHANGE LOG:
 *-------------------------------------------------------
+	Michael J. Potjer changed on 10/12/2015 11:37:46 AM
+	-	Enhance the FetchRepoStatus() method to allow a pathspec filter to be specified for the
+		status list.
+	-	Add the AddUntrackedFilesToRepo() method to automatically add any untracked binary files
+		and text file associated with a primary VFP binary file in the repository.
+		This method is called by the BinaryToTextRepo() method immediately after the cleanup
+		process executes.
+*-------------------------------------------------------
 #ENDIF
 
 LOCAL loGitUtils
@@ -622,14 +630,17 @@ FUNCTION FetchRepoStatus
 *!*							repository.  It is not required to specify a cursor name, but if no
 *!*							name is specified, a variable should be passed here by reference to
 *!*							receive the name of the cursor generated.
+*!*			 tcFilter (O) -	A valid Git pathspec that will be used to filter the results of the
+*!*							status cursor.
 
 *!*	RETURNS: Logical
 *!*		Returns true if the status of the repository can be successfully determined, otherwise
 *!*		returns .F.
 *********************************************************************
-LPARAMETERS toErrorInfo AS Exception, tcRepository AS String, tcCursorName AS String
+LPARAMETERS toErrorInfo AS Exception, tcRepository AS String, tcCursorName AS String, tcFilter AS String
 
 LOCAL llSuccess, ;
+	lcPathSpec, ;
 	lcStatusInfo, ;
 	laLines[1], ;
 	lnCount, ;
@@ -644,6 +655,11 @@ LOCAL llSuccess, ;
 tcCursorName = IIF( VARTYPE( m.tcCursorName ) = "C" AND NOT EMPTY( m.tcCursorName ), ;
 		ALLTRIM( m.tcCursorName ), "C_GitRepoStatusResults" )
 USE IN SELECT( m.tcCursorName )
+
+*-- MJP -- 10/12/2015 09:57:51 AM
+*-- If a filter was specified, use it as the pathspec for the status
+*-- command.
+lcPathSpec = IIF( VARTYPE( m.tcFilter ) = "C" AND NOT EMPTY( m.tcFilter ), SPACE(1) + m.tcFilter, SPACE(0) )
 
 *-- Generate the cursor used to store the status info.  For consistency,
 *-- the cursor will be generated regardless of whether there is any
@@ -671,7 +687,9 @@ CREATE CURSOR ( m.tcCursorName ) ;
 
 *-- Retrieve the git status using the static parseable format for the
 *-- output.
-llSuccess = This.ExecuteCommand( @m.toErrorInfo, m.tcRepository, "git status --porcelain", ;
+*-- MJP -- 10/12/2015 09:59:19 AM
+*-- Add any pathspec specified by the calling code.
+llSuccess = This.ExecuteCommand( @m.toErrorInfo, m.tcRepository, "git status --porcelain" + m.lcPathSpec, ;
 		@m.lcStatusInfo )
 
 *-- If the status command failed, or there are no changes to report,
@@ -1148,6 +1166,19 @@ IF m.llSuccess ;
 
 	USE IN SELECT( m.lcCleanupAlias )
 ENDIF
+
+*{ MJP -- 10/12/2015 03:07:34 PM - Begin
+*-- If no errors occurred, and there were changes to process, then add
+*-- any untracked files which should be included with the tracked files.
+*-- This ensures that all the binaries that go together, and the text
+*-- files generated for them, are all committed together.  It also
+*-- ensures that timestamps are generated for all of them, if timestamps
+*-- are being saved.
+IF m.llSuccess ;
+		AND m.llHasChanges
+	llSuccess = This.AddUntrackedFilesToRepo( @m.toErrorInfo, m.tcRepository )
+ENDIF
+*} MJP -- 10/12/2015 03:07:34 PM - End
 
 *-- Generate the timestamp file if indicated.  We'll only do this here
 *-- if modified files were cleaned up, so that we don't generate a lot
@@ -3461,6 +3492,182 @@ IF m.loConverter.Execute( m.tcInputFilename, "", "", m.llGenerateText, "1", "0",
 		@m.toErrorInfo ) > 0
 	llSuccess = .F.
 ENDIF
+
+RETURN m.llSuccess
+ENDFUNC
+
+*********************************************************************
+PROTECTED FUNCTION AddUntrackedFilesToRepo
+
+*!*	This method checks a repository to determine if a primary VFP binary has been added to the repo,
+*!*	but the secondary binaries or text file have not been added yet, and attempts to add them.
+
+*!*	PARAMETERS:
+*!*		  toErrorInfo (O) -	A variable passed by reference to store any error info returned from this
+*!*							method.  This will be returned as an Exception object.  This parameter is
+*!*							not required, but recommended.
+*!*		 tcRepository (O) -	The path of the repository where the files are to be added.  If omitted,
+*!*							the current repository will be used.
+
+*!*	RETURNS: Logical
+*!*		Returns .T. if there is nothing to do, or the files are successfully added to the repository.
+*!*		Returns .F. if an error occurs.
+*********************************************************************
+LPARAMETERS toErrorInfo AS Exception, tcRepository AS String
+
+LOCAL llSuccess, ;
+	lnWorkArea, ;
+	lcStatusAlias, ;
+	lcTrackedBinAlias, ;
+	lcUntrackedAlias, ;
+	lcMainExtension, ;
+	lnExtensionCount, ;
+	laOtherExt[1], ;
+	lcTextExtension, ;
+	lcFileToAdd, ;
+	loErrorInfo AS Exception, ;
+	lcErrorMessage, ;
+	xx
+
+lnWorkArea = SELECT()
+llSuccess = .T.
+lcStatusAlias = "C_AllRepoStatus" + SYS(2015)
+lcTrackedBinAlias = "C_TrackedVFPBinaries" + SYS(2015)
+lcUntrackedAlias = "C_UntrackedRepoFiles" + SYS(2015)
+
+TRY
+	*-- Get a list of all changes for the repository.  Abort if this
+	*-- fails, since we won't be able to do anything else.
+	IF NOT This.FetchRepoStatus( @m.toErrorInfo, m.tcRepository, m.lcStatusAlias )
+		llSuccess = .F.
+		EXIT
+	ENDIF
+
+	*-- If there are no changes, there's nothing to do.
+	IF RECCOUNT( m.lcStatusAlias ) = 0
+		EXIT
+	ENDIF
+
+	*-- Get a list of all untracked files that are NOT a primary VFP
+	*-- binary file.
+	SELECT * ;
+		FROM ( m.lcStatusAlias ) ;
+		WHERE NOT EMPTY( GS_FileExtension ) ;
+			AND NOT LEFT( GS_FileExtension, 3 ) IN ( "SCX", "VCX", "MNX", "FRX", "LBX", "DBF", "DBC" ) ;
+			AND GS_IndexStatus = "?" ;
+			AND GS_WorkTreeStatus = "?" ;
+		INTO CURSOR ( m.lcUntrackedAlias ) NOFILTER
+
+	*-- If there are no untracked files, then there's nothing to do
+	*-- here.
+	IF RECCOUNT( m.lcUntrackedAlias ) = 0
+		EXIT
+	ENDIF
+
+	*-- Get a list of all primary VFP binary files that don't have
+	*-- merge conflicts.  Omit files that are untracked, ignored, or
+	*-- are being deleted.
+	SELECT * ;
+		FROM ( m.lcStatusAlias ) ;
+		WHERE LEFT( GS_FileExtension, 3 ) IN ( "SCX", "VCX", "MNX", "FRX", "LBX", "DBF", "DBC" ) ;
+			AND NOT GS_MergeConflict ;
+			AND NOT GS_IndexStatus IN ( "?", "!", "D" ) ;
+			AND NOT GS_WorkTreeStatus IN ( "?", "!", "D" ) ;
+		INTO CURSOR ( m.lcTrackedBinAlias ) NOFILTER
+
+	*-- If there are no primary files to process, then there's nothing
+	*-- to do.
+	IF RECCOUNT( m.lcTrackedBinAlias ) = 0
+		EXIT
+	ENDIF
+
+	WAIT WINDOW "Adding untracked files to repository" ;
+			+ IIF( EMPTY( m.tcRepository ), SPACE(0), CHR(13) + m.tcRepository ) NOWAIT NOCLEAR
+
+	lcErrorMessage = SPACE(0)
+
+	*-- Check all the primary files that are being tracked.
+	SELECT ( m.lcTrackedBinAlias )
+	GO TOP
+	SCAN
+		*-- Get the list of secondary file extensions that need to be
+		*-- checked for the current file.
+		lcMainExtension = RTRIM( EVALUATE( m.lcTrackedBinAlias + ".GS_FileExtension" ) )
+		DO CASE
+			CASE m.lcMainExtension == "DBC"
+				*-- Get the 2 extensions that belong with a DBC.
+				DIMENSION laOtherExt[2]
+				laOtherExt[1] = "DCT"
+				laOtherExt[2] = "DCX"
+
+			CASE m.lcMainExtension = "DBF"
+				*-- Get the 2 possible extensions that can belong with
+				*-- a table.  If the table doesn't have one or both of
+				*-- these files, nothing happens.
+				DIMENSION laOtherExt[2]
+				laOtherExt[1] = "CDX"
+				laOtherExt[2] = "FPT"
+
+			OTHERWISE
+				*-- The rest of the extensions simply end with "T" in
+				*-- place of the "X" in the main extension.
+				DIMENSION laOtherExt[1]
+				laOtherExt[1] = LEFT( m.lcMainExtension, 2 ) + "T"
+		ENDCASE
+
+		lnExtensionCount = ALEN( laOtherExt )
+
+		*-- Check if a text file is generated for this binary type.
+		*-- If so, add the text extension to the list of extensions
+		*-- to process.
+		lcTextExtension = This.GetTextExtension( m.lcMainExtension, m.tcRepository )
+		IF NOT UPPER( m.lcTextExtension ) == UPPER( m.lcMainExtension )
+			lnExtensionCount = m.lnExtensionCount + 1
+			DIMENSION laOtherExt[m.lnExtensionCount]
+			laOtherExt[m.lnExtensionCount] = m.lcTextExtension
+		ENDIF
+
+		*-- Check for untracked files that belong with the main file
+		*-- being tracked.
+		SELECT ( m.lcUntrackedAlias )
+		FOR xx = 1 TO m.lnExtensionCount
+			*-- Get the relative path and file name of the secondary
+			*-- or text file, and check for it in the untracked files
+			*-- list.
+			lcFileToAdd = FORCEEXT( EVALUATE( m.lcTrackedBinAlias + ".GS_FileName" ), laOtherExt[m.xx] )
+			LOCATE FOR UPPER( GS_FileName ) == UPPER( m.lcFileToAdd )
+			IF FOUND( m.lcUntrackedAlias )
+				loErrorInfo = .NULL.
+				*-- This file belongs with a main file that is being
+				*-- tracked, so attempt to add it.
+				IF NOT This.ExecuteCommand( @m.loErrorInfo, m.tcRepository, "git add " ;
+						+ EVALUATE( m.lcUntrackedAlias + ".GS_FileName" ) )
+					*-- When an add fails, log the error, but continue
+					*-- processing so we add as many files as possible.
+					lcErrorMessage = m.lcErrorMessage + "Unable to add '" ;
+							+ EVALUATE( m.lcUntrackedAlias + ".GS_FileName" ) ;
+							+ "'  (" + m.loErrorInfo.Message + ")" + CHR(13) + CHR(10)
+				ENDIF
+			ENDIF
+		ENDFOR
+	ENDSCAN
+
+	*-- If any files could not be added, generate an error message with
+	*-- all the details.
+	IF NOT EMPTY( m.lcErrorMessage )
+		ERROR m.lcErrorMessage
+	ENDIF
+
+CATCH TO toErrorInfo
+	llSuccess = .F.
+
+FINALLY
+	*-- Make sure we clean up before leaving this method.
+	USE IN SELECT( m.lcStatusAlias )
+	USE IN SELECT( m.lcTrackedBinAlias )
+	USE IN SELECT( m.lcUntrackedAlias )
+	SELECT ( m.lnWorkArea )
+ENDTRY
 
 RETURN m.llSuccess
 ENDFUNC
