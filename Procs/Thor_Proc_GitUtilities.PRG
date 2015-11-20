@@ -385,6 +385,8 @@ FUNCTION GetRepoFileList
 
 *!*	This method populates an array with a list of all the files being tracked by the specified
 *!*	repository.
+*!*	NOTE: If a tracked file has been deleted, but the deletion has not been staged for commit yet,
+*!*	the file will still appear in this list, even though it doesn't exist in the folder.
 
 *!*	PARAMETERS:
 *!*		  toErrorInfo (O) -	A variable passed by reference to store any error info returned from
@@ -453,6 +455,7 @@ EXTERNAL ARRAY taFileDateList
 
 LOCAL llSuccess, ;
 	laFileList[1], ;
+	lnFileCount, ;
 	lcRepository, ;
 	loShell AS Shell.Shell, ;
 	loFolder AS SHELL.Folder, ;
@@ -477,24 +480,64 @@ ENDIF
 lcRepository = This.GetRepositoryPath( m.tcRepository )
 loShell = CREATEOBJECT( "Shell.Application" )
 
-*-- We know the size needed for the array, so dimension it before the
-*-- loop.
+*-- We know the maximum size needed for the array, so dimension it
+*-- before the loop.
 DIMENSION taFileDateList[ALEN( laFileList ), 2]
+lnFileCount = 0
 
 FOR xx = 1 TO ALEN( laFileList )
-	taFileDateList[m.xx,1] = laFileList[m.xx]
+	*!* MJP -- Removed 11/19/15 03:26:20 PM
+	*!* taFileDateList[m.xx,1] = laFileList[m.xx]
 	lcFileName = JUSTFNAME( laFileList[m.xx] )
 
 	*-- Get the full path to the file.  VFP seems to treat forward and
 	*-- backslashes the same, but convert them to backslashes for consistency.
 	lcFolder = ADDBS( m.lcRepository ) + JUSTPATH( CHRTRAN( laFileList[m.xx], "/", "\" ) )
 
+	*{ MJP -- 11/19/2015 03:27:11 PM - Begin
+	*-- Make sure the folder still exists, in case it has been deleted,
+	*-- but the deleted files in the folder haven't been staged for
+	*-- commit.
+	IF NOT DIRECTORY( m.lcFolder )
+		LOOP
+	ENDIF
+	*} MJP -- 11/19/2015 03:27:11 PM - End
+
 	*-- Use the Windows shell object to drill down and get the modification
 	*-- date for the current file.
 	loFolder = m.loShell.NameSpace( m.lcFolder )
 	loFolderItem = m.loFolder.ParseName( m.lcFileName )
-	taFileDateList[m.xx,2] = m.loFolderItem.ModifyDate
+
+	*{ MJP -- 11/19/2015 03:32:33 PM - Begin
+	*-- Make sure this file exists.  A deleted file will be in the list
+	*-- if the deletion hasn't been staged yet.
+	IF ISNULL( loFolderItem )
+		LOOP
+	ENDIF
+	*} MJP -- 11/19/2015 03:32:33 PM - End
+
+	lnFileCount = m.lnFileCount + 1
+	taFileDateList[m.lnFileCount,1] = laFileList[m.xx]
+	taFileDateList[m.lnFileCount,2] = m.loFolderItem.ModifyDate
 ENDFOR
+
+*{ MJP -- 11/19/2015 03:31:40 PM - Begin
+*-- Check the results.
+DO CASE
+	CASE m.lnFileCount = 0
+		*-- There are no files to process.  Clear the results array.
+		DIMENSION taFileDateList[1]
+		taFileDateList = .NULL.
+
+	CASE m.lnFileCount < ALEN( laFileList )
+		*-- Some of the files in the repo list no longer exist, so
+		*-- resize the results array.
+		DIMENSION taFileDateList[m.lnFileCount,2]
+
+	OTHERWISE
+		*-- The results are fine as-is.
+ENDCASE
+*} MJP -- 11/19/2015 03:31:40 PM - End
 
 RETURN m.llSuccess
 ENDFUNC
@@ -1903,15 +1946,39 @@ IF m.llSuccess ;
 		*-- Get the full folder name and normalize it to backslashes.
 		lcFolder = m.lcRepository + JUSTPATH( CHRTRAN( laFileDateList[m.lnRow, 1], "/", "\" ) )
 
+		*{ MJP -- 11/19/2015 04:22:09 PM - Begin
+		*-- Make sure the folder still exists, in case it was deleted
+		*-- after the timestamp file was created.
+		IF NOT DIRECTORY( m.lcFolder )
+			LOOP
+		ENDIF
+		*} MJP -- 11/19/2015 04:22:09 PM - End
+
 		*-- Get a shell object reference to the file.
 		loFolder = m.loShell.NameSpace( m.lcFolder )
 		loFolderItem = m.loFolder.ParseName( m.lcFileName )
 
-		*-- If the current modification date of this file is different
-		*-- from what was saved, replace it.
-		IF NOT m.loFolderItem.ModifyDate = laFileDateList[m.lnRow, 2]
-			loFolderItem.ModifyDate = laFileDateList[m.lnRow, 2]
-		ENDIF
+		*!* *{ MJP -- 11/19/15 04:23:39 PM - Begin
+		*!* *-- If the current modification date of this file is different
+		*!* *-- from what was saved, replace it.
+		*!* IF NOT m.loFolderItem.ModifyDate = laFileDateList[m.lnRow, 2]
+		*!* 	loFolderItem.ModifyDate = laFileDateList[m.lnRow, 2]
+		*!* ENDIF
+		DO CASE
+			CASE ISNULL( m.loFolderItem )
+				*-- The current file specified in the timestamp list
+				*-- no longer exists, so ignore it.
+
+			CASE m.loFolderItem.ModifyDate = laFileDateList[m.lnRow, 2]
+				*-- The file modification timestamp hasn't changed, so
+				*-- leave it alone.
+
+			OTHERWISE
+				*-- The current modification date of this file is different
+				*-- from what was saved, so replace it.
+				loFolderItem.ModifyDate = laFileDateList[m.lnRow, 2]
+		ENDCASE
+		*!* *} MJP -- 11/19/15 04:23:39 PM - End
 	ENDFOR
 ENDIF
 

@@ -7,8 +7,8 @@ WITH toUpdateInfo
     .ApplicationName = 'Git Utilities'
     .Component       = 'No'
     .ToolName        = 'Thor_Tool_ThorInternalRepository'
-    .VersionNumber   = 'v2015.10.12'
-    .VersionDate     = DATE(2015, 10, 12)
+    .VersionNumber   = 'v2015.11.20'
+    .VersionDate     = DATE(2015, 11, 20)
     .SourceFileUrl   = 'https://bitbucket.org/mikepotjer/vfp-git-utils/downloads/GitUtils.zip'
     .LinkPrompt      = 'Git Utilities for VFP Home Page'
     .Link            = 'https://bitbucket.org/mikepotjer/vfp-git-utils'
@@ -27,13 +27,17 @@ The Git Utilities ease the process of working with VFP's binary files when using
 These utilities require the Thor repository, FoxBin2Prg, Git for Windows, and the Windows Scripting Host.
 
 ==== Change History ====
+2015.11.20
+ - Correct a bug that caused an error in the "Save file timestamps" tool when a file that was being tracked in the repository has been deleted, but the deletion is not staged yet. (Thanks to Eddie Caldwell)
+ - Correct a bug that caused an error in the "Restore file timestamps" tool when a file is referenced in the timestamp file, but is was deleted from the repository in a previous commit. (Thanks to Eddie Caldwell)
+
 2015.10.12
-- When a new primary VFP binary file is added to a repository, the "Prepare for Git commit" process will now ensure that any untracked files that belong with it will be added to the repository.  For example, if a .SCX file is added, the .SCT and .SC2 files that go with it will be added for you.
+ - When a new primary VFP binary file is added to a repository, the "Prepare for Git commit" process will now ensure that any untracked files that belong with it will be added to the repository.  For example, if a .SCX file is added, the .SCT and .SC2 files that go with it will be added for you.
 
 2015.10.09
-- Modify the list of repositories in a project to include totals for staged and unstaged changes, untracked files, and merge conflicts.
-- Add a tool which will create and populate a table from a FoxBin2Prg DB2 file created with the setting DBF_Conversion_Support: 4.
-- Update the ReadMe file (shown on the tool homepage) to document the new features, and include additional information about the Prepare for Git Commit tool.
+ - Modify the list of repositories in a project to include totals for staged and unstaged changes, untracked files, and merge conflicts.
+ - Add a tool which will create and populate a table from a FoxBin2Prg DB2 file created with the setting DBF_Conversion_Support: 4.
+ - Update the ReadMe file (shown on the tool homepage) to document the new features, and include additional information about the Prepare for Git Commit tool.
 
 2015.07.27
  - Enhance the error handling for executing external commands to do a better job of collecting error info, eliminating a scenario where a blank error message was being generated.
