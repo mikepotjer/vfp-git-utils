@@ -1538,12 +1538,16 @@ LPARAMETERS toErrorInfo AS Exception, tcRepository AS String, tcFileName AS Stri
 
 EXTERNAL ARRAY taFileDateList
 
-LOCAL lcRepository, ;
-	lcFullFileName, ;
+LOCAL laFileList[1], ;
 	lcFileContent, ;
+	lcFilename, ;
+	lcFullFileName, ;
+	lcRepository, ;
 	llSuccess, ;
 	lnFileCount, ;
-	laFileList[1], ;
+	lnListCount, ;
+	lnRow, ;
+	ltTimestamp, ;
 	xx
 
 llSuccess = .T.
@@ -1573,12 +1577,51 @@ ELSE
 	lnFileCount = ALINES( laFileList, m.lcFileContent, 1+4 )
 	DIMENSION taFileDateList[m.lnFileCount,2]
 
+	*-- MJP -- 06/11/2016 03:55:20 PM
+	*-- Keep a separate count of the number of files added to the list.
+	lnListCount = 0
+
 	*-- Extract the file name and timestamp from the temporary array,
 	*-- converting the timestamp to a date/time data type.
 	FOR xx = 1 TO m.lnFileCount
-		taFileDateList[m.xx,1] = GETWORDNUM( laFileList[m.xx], 2, CHR(9) )
-		taFileDateList[m.xx,2] = EVALUATE( "{^" + GETWORDNUM( laFileList[m.xx], 1, CHR(9) ) + "}" )
+		*!* *{ MJP -- 06/11/2016 15:41:29 - Begin
+		*!* taFileDateList[m.xx,1] = GETWORDNUM( laFileList[m.xx], 2, CHR(9) )
+		*!* taFileDateList[m.xx,2] = EVALUATE( "{^" + GETWORDNUM( laFileList[m.xx], 1, CHR(9) ) + "}" )
+		lcFilename = GETWORDNUM( laFileList[m.xx], 2, CHR(9) )
+		ltTimestamp = EVALUATE( "{^" + GETWORDNUM( laFileList[m.xx], 1, CHR(9) ) + "}" )
+
+		*-- Check if this file name already exists in the list.  This
+		*-- is to correct a list that may have had duplicate file names
+		*-- added to it, possibly during a merge.
+		lnRow = ASCAN( taFileDateList, m.lcFilename, 1, -1, 1, 1+2+4+8 )
+
+		DO CASE
+			CASE m.lnRow = 0
+				*-- The file isn't in the list yet, so add it.
+				lnListCount = m.lnListCount + 1
+				taFileDateList[m.lnListCount,1] = m.lcFilename
+				taFileDateList[m.lnListCount,2] = m.ltTimestamp
+
+			CASE taFileDateList[m.lnRow,2] < m.ltTimestamp
+				*-- The file already exists, but has an older timestamp.
+				*-- We will assume that the more recent timestamp is
+				*-- probably the correct one.
+				taFileDateList[m.lnRow,2] = m.ltTimestamp
+
+			OTHERWISE
+				*-- The file already exists, and doesn't require any
+				*-- changes.
+		ENDCASE
+		*!* *} MJP -- 06/11/2016 15:41:29 - End
 	ENDFOR
+
+	*{ MJP -- 06/11/2016 03:57:30 PM - Begin
+	*-- If the list contains fewer items than what was read from the
+	*-- file, reduce the size of the array.
+	IF m.lnListCount < m.lnFileCount
+		DIMENSION taFileDateList[m.lnListCount,2]
+	ENDIF
+	*} MJP -- 06/11/2016 03:57:30 PM - End
 ENDIF
 
 RETURN m.llSuccess
