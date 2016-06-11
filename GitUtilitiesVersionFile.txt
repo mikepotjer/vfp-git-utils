@@ -7,8 +7,8 @@ WITH toUpdateInfo
     .ApplicationName = 'Git Utilities'
     .Component       = 'No'
     .ToolName        = 'Thor_Tool_ThorInternalRepository'
-    .VersionNumber   = 'v2015.11.20'
-    .VersionDate     = DATE(2015, 11, 20)
+    .VersionNumber   = 'v2016.06.11'
+    .VersionDate     = DATE(2015, 6, 11)
     .SourceFileUrl   = 'https://bitbucket.org/mikepotjer/vfp-git-utils/downloads/GitUtils.zip'
     .LinkPrompt      = 'Git Utilities for VFP Home Page'
     .Link            = 'https://bitbucket.org/mikepotjer/vfp-git-utils'
@@ -27,6 +27,9 @@ The Git Utilities ease the process of working with VFP's binary files when using
 These utilities require the Thor repository, FoxBin2Prg, Git for Windows, and the Windows Scripting Host.
 
 ==== Change History ====
+2016.06.11
+ - Correct an issue where the modification date of a file that had just been edited could be reset to an earlier date during the "Prepare for Git commit" process.  This could occur if the timestamp file somehow ended up with duplicate entries for a file in the repository.  Duplicates are now removed when reading the file list from the timestamp file, and only the most recent timestamp is used for a duplicated file name.  This fix also removes the duplicates when the timestamp file is updated. (Thanks to Eddie Caldwell)
+
 2015.11.20
  - Correct a bug that caused an error in the "Save file timestamps" tool when a file that was being tracked in the repository has been deleted, but the deletion is not staged yet. (Thanks to Eddie Caldwell)
  - Correct a bug that caused an error in the "Restore file timestamps" tool when a file is referenced in the timestamp file, but is was deleted from the repository in a previous commit. (Thanks to Eddie Caldwell)

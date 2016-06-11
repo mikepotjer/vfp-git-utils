@@ -18,6 +18,8 @@ IF PCOUNT() = 1 ;
 
 		* Optional
 TEXT TO .Description NOSHOW && a description for the tool
+PLEASE NOTE: As of FoxBin2Prg version 1.19.47, this tool is no longer needed.  You can now set DBF_Conversion_Support to 8, and FoxBin2Prg will perform 2-way conversions of DBF files for you.
+
 This tool provides conversion from text to binary for ANY .DBF that was converted to text with FoxBin2Prg, including text files created with a DBF_Conversion_Support setting of 4.  For text files containing record data, the table will be repopulated with the data from the text file.
 This tool will attempt to generate a .DBF file even if the text file is in a folder where the DBF_Conversion_Support setting is not 2.
 
