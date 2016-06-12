@@ -160,7 +160,7 @@ stats about any changes or conflicts for each repository.
 
 #### `Thor_Tool_FoxBin2Prg_DB2toDBF.PRG` ####
 **PLEASE NOTE:**  As of FoxBin2Prg version 1.19.47, this tool is no longer needed.  There is a new
-FoxBin2Prg.CGF setting `DBF_Conversion_Support: 8`, which provides bidirection conversion of
+FoxBin2Prg.CFG setting `DBF_Conversion_Support: 8`, which provides bidirectional conversion of
 .DBF/.DB2 files directly from FoxBin2Prg.  
 
 Unlike the other Git Utilities, this tool only uses FoxBin2Prg and not Git, and therefore can be
