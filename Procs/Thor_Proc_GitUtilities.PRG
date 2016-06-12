@@ -1210,6 +1210,14 @@ IF m.llSuccess ;
 	USE IN SELECT( m.lcCleanupAlias )
 ENDIF
 
+*{ MJP -- 06/11/2016 08:29:52 PM - Begin
+*-- If there are any .PJX files that are not being tracked, but have a
+*-- text file being tracked in the repo, regenerate those text files.
+IF m.llSuccess
+	llSuccess = This.BinaryToTextProjectFilesInRepo( @m.toErrorInfo, m.tcRepository )
+ENDIF
+*} MJP -- 06/11/2016 08:29:52 PM - End
+
 *{ MJP -- 10/12/2015 03:07:34 PM - Begin
 *-- If no errors occurred, and there were changes to process, then add
 *-- any untracked files which should be included with the tracked files.
@@ -1418,11 +1426,14 @@ DO CASE
 		USE IN SELECT( m.lcRepoListAlias )
 		RETURN m.llSuccess
 
-	*-- MJP -- 02/05/2015 05:02:01 PM
-	CASE NOT This.BinaryToTextProjectFile( @m.toErrorInfo, m.tcProjectName )
-		*-- The text file for the project itself could not be updated,
-		*-- so abort.
-		RETURN .F.
+	*!* MJP -- Removed 06/11/2016 20:34:44
+	*-- BinaryToTextRepo() now calls BinaryToTextProjectFilesInRepo()
+	*-- to regenerate text files for ALL the .PJX files in a repository.
+	*!* *-- MJP -- 02/05/2015 05:02:01 PM
+	*!* CASE NOT This.BinaryToTextProjectFile( @m.toErrorInfo, m.tcProjectName )
+	*!* 	*-- The text file for the project itself could not be updated,
+	*!* 	*-- so abort.
+	*!* 	RETURN .F.
 
 	OTHERWISE
 		*-- There is a list of repositories to process.
@@ -1440,6 +1451,114 @@ SCAN
 ENDSCAN
 
 USE IN SELECT( m.lcRepoListAlias )
+
+RETURN m.llSuccess
+ENDFUNC
+
+*********************************************************************
+FUNCTION BinaryToTextProjectFilesInRepo
+
+*!*	If there are .PJX files that are not being tracked in the specified repository, but there are
+*!*	text files for those .PJX files (typically with a .PJ2 extension) that ARE being tracked, then
+*!*	this method will regenerate those text files.
+
+*!*	PARAMETERS:
+*!*		  toErrorInfo (O) -	A variable passed by reference to store any error info returned from this
+*!*							method.  This will be returned as an Exception object.  This parameter is
+*!*							not required, but recommended.
+*!*		 tcRepository (O) -	The path of the repository where the .PJX files are to be processed.  If
+*!*							omitted, the current repository will be used.
+
+*!*	RETURNS: Logical
+*!*		Returns .T. if there is nothing to do, or the project files are successfully processed.
+*!*		Returns .F. if an error occurs.
+*********************************************************************
+LPARAMETERS toErrorInfo AS Exception, tcRepository AS String
+
+LOCAL laProjectBinaryFiles[1], ;
+	laProjectTextFiles[1], ;
+	lcProjectName, ;
+	lcRepoFilesAlias, ;
+	lcRepository, ;
+	lcTextExtension, ;
+	llSuccess, ;
+	xx
+
+llSuccess = .T.
+
+lcRepository = This.GetRepositoryPath( m.tcRepository )
+
+*-- Check if there is a text extension specified for .PJX files.  If
+*-- .PJX files are not being converted to text in this repository, then
+*-- there's nothing to do here.
+lcTextExtension = This.GetTextExtension( "PJX", m.lcRepository )
+IF m.lcTextExtension == "PJX"
+	RETURN m.llSuccess
+ENDIF
+
+*-- Get a list of all the files tracked in the repository.
+lcRepoFilesAlias = "C_RepositoryFileList" + SYS(2015)
+llSuccess = This.FetchRepoFileList( @m.toErrorInfo, m.lcRepository, m.lcRepoFilesAlias )
+IF m.llSuccess
+	laProjectTextFiles = .NULL.
+	laProjectBinaryFiles = .NULL.
+
+	*-- Get a list of just the text files for .PJX files, and a list
+	*-- of any .PJX files tracked in the repository.
+	TRY
+		SELECT GL_FileName ;
+			FROM ( m.lcRepoFilesAlias ) ;
+			WHERE RTRIM( GL_FileExtension ) == m.lcTextExtension ;
+			INTO ARRAY laProjectTextFiles
+
+		SELECT GL_FileName ;
+			FROM ( m.lcRepoFilesAlias ) ;
+			WHERE RTRIM( GL_FileExtension ) == "PJX" ;
+			INTO ARRAY laProjectBinaryFiles
+
+	CATCH TO toErrorInfo
+		llSuccess = .F.
+	ENDTRY
+ENDIF
+
+USE IN SELECT( m.lcRepoFilesAlias )
+
+*-- If there are project manager text files in this repository, process
+*-- them.
+IF m.llSuccess ;
+		AND NOT ISNULL( laProjectTextFiles[1] )
+	lcRepository = ADDBS( m.lcRepository )
+
+	FOR xx = 1 TO ALEN( laProjectTextFiles, 1 )
+		*-- Get the full path to the .PJX file corresponding to this
+		*-- text file.
+		lcProjectName = FORCEEXT( CHRTRAN( m.lcRepository + laProjectTextFiles[m.xx], "/", "\" ), "PJX" )
+
+		DO CASE
+			CASE NOT FILE( m.lcProjectName )
+				*-- The .PJX file doesn't exist, so there's nothing to
+				*-- process.  Evidently the text file has not been
+				*-- converted back to a binary yet.
+
+			CASE NOT ISNULL( laProjectBinaryFiles[1] ) ;
+					AND ASCAN( laProjectBinaryFiles, FORCEEXT( laProjectTextFiles[m.xx], "PJX" ), 1, -1, 1, 1+2+4 ) > 0
+				*-- This repository is tracking .PJX files, and the
+				*-- .PJX file for this specific text file is being
+				*-- tracked in the repo.  The text file will regenerated
+				*-- by This.BinaryToTextRepo(), so no need to deal with
+				*-- it again here.
+
+			CASE This.BinaryToTextProjectFile( @m.toErrorInfo, m.lcProjectName )
+				*-- The text file was successfully updated for the .PJX
+				*-- file.
+
+			OTHERWISE
+				*-- An error occurred updating the text file, abort.
+				llSuccess = .F.
+				EXIT
+		ENDCASE
+	ENDFOR
+ENDIF
 
 RETURN m.llSuccess
 ENDFUNC
