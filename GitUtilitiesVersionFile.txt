@@ -29,6 +29,7 @@ These utilities require the Thor repository, FoxBin2Prg, Git for Windows, and th
 ==== Change History ====
 2016.06.11
  - Correct an issue where the modification date of a file that had just been edited could be reset to an earlier date during the "Prepare for Git commit" process.  This could occur if the timestamp file somehow ended up with duplicate entries for a file in the repository.  Duplicates are now removed when reading the file list from the timestamp file, and only the most recent timestamp is used for a duplicated file name.  This fix also removes the duplicates when the timestamp file is updated. (Thanks to Eddie Caldwell)
+ - Enhance the "Prepare for Git commit" process so that if there are multiple .PJ2 files being tracked in a repository (and the .PJX files are not being tracked), all of the .PJ2 files will be regenerated.  Before, you had to run "Prepare for Git commit" with a specific .PJX file, and then only the .PJ2 file for that .PJX was regenerated.
 
 2015.11.20
  - Correct a bug that caused an error in the "Save file timestamps" tool when a file that was being tracked in the repository has been deleted, but the deletion is not staged yet. (Thanks to Eddie Caldwell)
