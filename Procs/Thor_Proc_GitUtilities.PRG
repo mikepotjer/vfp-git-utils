@@ -582,6 +582,106 @@ RETURN m.llHasChanges
 ENDFUNC
 
 *********************************************************************
+FUNCTION IsFileInRepo
+
+*!*	This method determines if the specified file, or its text file if it's a VFP binary file, is
+*!*	being tracked by a repository.
+
+*!*	PARAMETERS:
+*!*			  toErrorInfo (O) -	A variable passed by reference to store any error info returned from
+*!*								this method.  This will be returned as an Exception object.  This
+*!*								parameter is not required, but recommended.
+*!*			   tcFilePath (R) -	The full path and file name of a file to look for in the list of
+*!*								files being tracked by the repository in which the file is located,
+*!*								if any.
+*!*		  tlCheckTextFile (O) -	If the name of a VFP binary file is specified for tcFilePath, indicates
+*!*								whether to check if the corresponding text file is being tracked by a
+*!*								repository.  When passed as .T., this method returns .T. if either the
+*!*								binary or the text file (or both) is being tracked.  If omitted or
+*!*								.F., only the specified file will be checked.  If the specified file
+*!*								name is not a type that has a text file associated with it, this
+*!*								parameter does nothing.
+*!*			 tcRepository (O) -	If a variable is passed by reference to this parameter, and the
+*!*								specified file name is being tracked in a repository, then the path
+*!*								to the repository will be returned via this parameter.
+
+*!*	RETURNS: Logical
+*!*		Returns .T. if the specified file is tracked by a repository, .F. if it is not tracked,
+*!*		and .NULL. if an error occurs.
+*********************************************************************
+LPARAMETERS toErrorInfo AS Exception, tcFilePath AS String, tlCheckTextFile AS Boolean, tcRepository AS String
+
+LOCAL laRepoFiles[1], ;
+	lcFileExtension, ;
+	lcFolderPath, ;
+	lcLookupFileName, ;
+	lcRepoPath, ;
+	lcTextExtension, ;
+	llIsInRepo
+
+llIsInRepo = .F.
+tcRepository = SPACE(0)
+
+*-- Get the folder containing the file being checked, and determine
+*-- if the file is in a repository folder.  If there isn't even a repo
+*-- folder, then the file is obviously not being tracked.
+lcFolderPath = JUSTPATH( m.tcFilePath )
+lcRepoPath = This.GetRepoFolderForPath( @m.toErrorInfo, m.lcFolderPath )
+IF EMPTY( m.lcRepoPath )
+	RETURN m.llIsInRepo
+ENDIF
+
+*-- Attempt to retrieve a list of the files in the repository where the
+*-- specified file is located.
+laRepoFiles = .NULL.
+DO CASE
+	CASE NOT This.GetRepoFileList( @m.toErrorInfo, m.lcRepoPath, @laRepoFiles )
+		*-- An error occurred retrieving the file list, so abort.
+		RETURN .NULL.
+
+	CASE ISNULL( laRepoFiles[1] )
+		*-- There are no files tracked by the repository, so the file
+		*-- cannot be tracked.
+		RETURN m.llIsInRepo
+
+	OTHERWISE
+		*-- Continue on and check if the file is being tracked.
+ENDCASE
+
+*-- Get the path to the file relative to the repository path.  Convert
+*-- any backslashes (\) to forward slashes (/) to match the way paths
+*-- are separated in Git file list.
+lcLookupFileName = STRTRAN( m.tcFilePath, ADDBS( m.lcRepoPath ), SPACE(0), 1, 1, 1 )
+lcLookupFileName = CHRTRAN( m.lcLookupFileName, "\", "/" )
+
+*-- Lookup the specified file name in the list of files tracked by the
+*-- repository.
+llIsInRepo = ( ASCAN( laRepoFiles, m.lcLookupFileName, 1, -1, 1, 1+2+4 ) > 0 )
+
+IF NOT m.llIsInRepo ;
+		AND VARTYPE( m.tlCheckTextFile ) = "L" ;
+		AND m.tlCheckTextFile
+	*-- The specified file is not being tracked, but we also need to
+	*-- check if a corresponding text file is being tracked.  Get the
+	*-- name of the text file, if any.  Make sure backslashes are converted
+	*-- again, and check if the text file is being tracked.
+	lcLookupFileName = This.GetTextFilename( m.lcLookupFileName, m.lcRepoPath )
+	IF NOT EMPTY( m.lcLookupFileName )
+		lcLookupFileName = CHRTRAN( m.lcLookupFileName, "\", "/" )
+		llIsInRepo = ( ASCAN( laRepoFiles, m.lcLookupFileName, 1, -1, 1, 1+2+4 ) > 0 )
+	ENDIF
+ENDIF
+
+*-- If the file is being tracked, store the repository path in the
+*-- parameter to return to the calling code.
+IF m.llIsInRepo
+	tcRepository = m.lcRepoPath
+ENDIF
+
+RETURN m.llIsInRepo
+ENDFUNC
+
+*********************************************************************
 FUNCTION FetchRepoFileList
 
 *!*	This method returns a cursor containing a list of all the files committed to the specified (or
@@ -800,6 +900,48 @@ RETURN m.llSuccess
 ENDFUNC
 
 *********************************************************************
+FUNCTION GetRepoFolderForPath
+
+*!*	This method determines the Git repository folder, if any, for the specified folder.
+
+*!*	PARAMETERS:
+*!*		  toErrorInfo (O) -	A variable passed by reference to store any error info returned from
+*!*							this method.  This will be returned as an Exception object.  This
+*!*							parameter is not required, but recommended.
+*!*		 tcFolderPath (R) -	The full path of a folder for which you want to determine the repository
+*!*							folder that it belongs to, if any.
+
+*!*	RETURNS: Character
+*!*		Returns the full path to the repository if one is found, otherwise returns an empty string.
+*********************************************************************
+LPARAMETERS toErrorInfo AS Exception, tcFolderPath AS String
+
+LOCAL lcRepoFolder, ;
+	lcFolderPath
+
+lcRepoFolder = SPACE(0)
+lcFolderPath = ADDBS( m.tcFolderPath )
+
+DO WHILE OCCURS( "\", m.lcFolderPath ) > 1
+	IF DIRECTORY( m.lcFolderPath + ".Git", 1 )
+		*-- The current folder contains the .Git folder (which is normally
+		*-- hidden), so this must be a Git repository.
+		lcRepoFolder = ALLTRIM( m.lcFolderPath )
+		EXIT
+	ELSE
+		*-- This folder is not a repository, so check if the parent
+		*-- folder is.  Note that although subfolders can be omitted
+		*-- from a repository, it will generally be safe to assume that
+		*-- any folder that is in the project will be managed by the
+		*-- repository of a parent folder.
+		lcFolderPath = LEFT( m.lcFolderPath, RAT( "\", m.lcFolderPath, 2 ) )
+	ENDIF
+ENDDO
+
+RETURN m.lcRepoFolder
+ENDFUNC
+
+*********************************************************************
 FUNCTION GetRepoStatistics
 
 *!*	This method populates a data object with some statistics about the specified repository.
@@ -914,6 +1056,7 @@ LOCAL llSuccess, ;
 	lcProjectFoldersAlias, ;
 	lcSQL, ;
 	lcFolderPath, ;
+	lcRepoFolder, ;
 	lcBranchName, ;
 	loRepoStatistics
 
@@ -983,23 +1126,33 @@ IF m.llSuccess
 	SCAN
 		lcFolderPath = EVALUATE( m.lcProjectFoldersAlias + ".PF_FolderPath" )
 
-		DO WHILE OCCURS( "\", m.lcFolderPath ) > 1
-			IF DIRECTORY( m.lcFolderPath + ".Git", 1 )
-				*-- The current folder contains the .Git folder (which
-				*-- is normally hidden), so this must be a Git repository.
-				REPLACE PF_GitRepository WITH ALLTRIM( m.lcFolderPath ) ;
-						IN ( m.lcProjectFoldersAlias )
-				EXIT
-			ELSE
-				*-- This folder is not a repository, so check if the
-				*-- parent folder is.  Note that although subfolders
-				*-- can be omitted from a repository, it will generally
-				*-- be safe to assume that any folder that is in the
-				*-- project will be managed by the repository of a
-				*-- parent folder.
-				lcFolderPath = LEFT( m.lcFolderPath, RAT( "\", m.lcFolderPath, 2 ) )
-			ENDIF
-		ENDDO
+		*!* *{ MJP -- 06/20/2016 16:04:00 - Begin
+		*!* DO WHILE OCCURS( "\", m.lcFolderPath ) > 1
+		*!* 	IF DIRECTORY( m.lcFolderPath + ".Git", 1 )
+		*!* 		*-- The current folder contains the .Git folder (which
+		*!* 		*-- is normally hidden), so this must be a Git repository.
+		*!* 		REPLACE PF_GitRepository WITH ALLTRIM( m.lcFolderPath ) ;
+		*!* 				IN ( m.lcProjectFoldersAlias )
+		*!* 		EXIT
+		*!* 	ELSE
+		*!* 		*-- This folder is not a repository, so check if the
+		*!* 		*-- parent folder is.  Note that although subfolders
+		*!* 		*-- can be omitted from a repository, it will generally
+		*!* 		*-- be safe to assume that any folder that is in the
+		*!* 		*-- project will be managed by the repository of a
+		*!* 		*-- parent folder.
+		*!* 		lcFolderPath = LEFT( m.lcFolderPath, RAT( "\", m.lcFolderPath, 2 ) )
+		*!* 	ENDIF
+		*!* ENDDO
+
+		*-- Check if a repository exists in this folder, or one of its
+		*-- parent folders.  If so, save it.
+		lcRepoFolder = This.GetRepoFolderForPath( @m.toErrorInfo, m.lcFolderPath )
+		IF NOT EMPTY( m.lcRepoFolder )
+			REPLACE PF_GitRepository WITH ALLTRIM( m.lcRepoFolder ) ;
+					IN ( m.lcProjectFoldersAlias )
+		ENDIF
+		*!* *} MJP -- 06/20/2016 16:04:00 - End
 	ENDSCAN
 
 	*-- There are likely multiple project folders that are included in
@@ -1090,14 +1243,14 @@ FUNCTION BinaryToTextRepo
 LPARAMETERS toErrorInfo AS Exception, tcRepository AS String, tlCleanupModified AS Boolean
 
 LOCAL lcChangesAlias, ;
-	llHasChanges, ;
+	lcCleanupAlias, ;
+	lcFullFileName, ;
+	lcMainExtension, ;
+	lcMessage, ;
+	lcRelativeFileName, ;
 	lcRepository, ;
 	llCleanupModified, ;
-	lcCleanupAlias, ;
-	lcRelativeFileName, ;
-	lcMainExtension, ;
-	lcFullFileName, ;
-	lcMessage, ;
+	llHasChanges, ;
 	llSuccess
 
 llSuccess = .T.
@@ -1266,16 +1419,16 @@ FUNCTION CleanupVFPBinaries
 *********************************************************************
 LPARAMETERS toErrorInfo AS Exception, tcFileListAlias AS String, tcRepository AS String
 
-LOCAL llSuccess, ;
-	lcDefaultPath, ;
-	lcStatusAlias, ;
-	lcRepository, ;
+LOCAL lcDefaultPath, ;
+	lcFullFileName, ;
+	lcMainFileName, ;
 	lcMessage, ;
 	lcRelativeFileName, ;
-	lcFullFileName, ;
+	lcRepository, ;
+	lcStatusAlias, ;
+	lcTextFileName, ;
 	llStaged, ;
-	lcMainFileName, ;
-	lcTextFileName
+	llSuccess
 
 llSuccess = .T.
 
@@ -1426,14 +1579,17 @@ DO CASE
 		USE IN SELECT( m.lcRepoListAlias )
 		RETURN m.llSuccess
 
-	*!* MJP -- Removed 06/11/2016 20:34:44
-	*-- BinaryToTextRepo() now calls BinaryToTextProjectFilesInRepo()
-	*-- to regenerate text files for ALL the .PJX files in a repository.
-	*!* *-- MJP -- 02/05/2015 05:02:01 PM
-	*!* CASE NOT This.BinaryToTextProjectFile( @m.toErrorInfo, m.tcProjectName )
-	*!* 	*-- The text file for the project itself could not be updated,
-	*!* 	*-- so abort.
-	*!* 	RETURN .F.
+	*{ MJP -- 06/23/2016 12:00:20 PM - Begin
+	CASE NVL( This.IsFileInRepo( @m.toErrorInfo, m.tcProjectName, .T. ), .F. )
+		*-- The project file is already in the repository, so it will
+		*-- be processed with the rest of the files in the repo.
+	*} MJP -- 06/23/2016 12:00:20 PM - End
+
+	*-- MJP -- 02/05/2015 05:02:01 PM
+	CASE NOT This.BinaryToTextProjectFile( @m.toErrorInfo, m.tcProjectName )
+		*-- The text file for the project itself could not be updated,
+		*-- so abort.
+		RETURN .F.
 
 	OTHERWISE
 		*-- There is a list of repositories to process.
@@ -1580,9 +1736,9 @@ FUNCTION BinaryToTextProjectFile
 *********************************************************************
 LPARAMETERS toErrorInfo AS Exception, tcProjectName AS String
 
-LOCAL llSuccess, ;
-	lcProjectName, ;
+LOCAL lcProjectName, ;
 	llProjectOpen, ;
+	llSuccess, ;
 	loProject AS VisualFoxpro.IFoxProject
 
 *-- Make sure we have the full path to the project to process.  If the
@@ -1781,23 +1937,23 @@ FUNCTION SaveRepoTimestampFile
 *********************************************************************
 LPARAMETERS toErrorInfo AS Exception, tcRepository AS String, tcFileName AS String
 
-LOCAL lcRepository, ;
-	lcTimestampFileName, ;
+LOCAL laFileDateList[1], ;
+	laFilesToIgnore[1], ;
+	lcFileContent, ;
+	lcFileName, ;
+	lcFolder, ;
 	lcFullFileName, ;
 	lcOldFileContent, ;
-	llSuccess, ;
-	laFileDateList[1], ;
+	lcRepository, ;
 	lcStatusAlias, ;
+	lcTimestampFileName, ;
+	llSuccess, ;
 	lnFileCount, ;
-	loShell AS Shell.Shell, ;
+	lnRow, ;
 	loFolder AS SHELL.Folder, ;
 	loFolderItem AS SHELL.FolderItem, ;
-	lcFolder, ;
-	lcFileName, ;
-	lnRow, ;
-	laFilesToIgnore[1], ;
-	xx, ;
-	lcFileContent
+	loShell AS Shell.Shell, ;
+	xx
 
 lcRepository = This.GetRepositoryPath( m.tcRepository )
 
@@ -2033,17 +2189,17 @@ FUNCTION RestoreRepoTimestamps
 *********************************************************************
 LPARAMETERS toErrorInfo AS Exception, tcRepository AS String, tcFileName AS String
 
-LOCAL llSuccess, ;
-	laFileDateList[1], ;
-	lcStatusAlias, ;
-	lnFileCount, ;
-	lnRow, ;
-	lcRepository, ;
+LOCAL laFileDateList[1], ;
 	lcFileName, ;
 	lcFolder, ;
-	loShell AS Shell.Shell, ;
+	lcRepository, ;
+	lcStatusAlias, ;
+	llSuccess, ;
+	lnFileCount, ;
+	lnRow, ;
 	loFolder AS SHELL.Folder, ;
-	loFolderItem AS SHELL.FolderItem
+	loFolderItem AS SHELL.FolderItem, ;
+	loShell AS Shell.Shell
 
 *-- Attempt to read the modification dates from the timestamp file.
 *-- If there are no stored dates, or an error occurred, we're done.
@@ -2226,9 +2382,9 @@ FUNCTION TagProject
 *********************************************************************
 LPARAMETERS toErrorInfo AS Exception, tcProjectName AS String, tcTag AS String, tcMessage AS String
 
-LOCAL lcRepoListAlias, ;
-	llSuccess, ;
-	lcMessage
+LOCAL lcMessage, ;
+	lcRepoListAlias, ;
+	llSuccess
 
 llSuccess = .T.
 
@@ -2298,8 +2454,8 @@ FUNCTION UnTagProject
 LPARAMETERS toErrorInfo AS Exception, tcProjectName AS String, tcTag AS String
 
 LOCAL lcRepoListAlias, ;
-	llSuccess, ;
-	lcTagList
+	lcTagList, ;
+	llSuccess
 
 llSuccess = .T.
 
@@ -2458,8 +2614,8 @@ FUNCTION FetchBinaryFilesToConvert
 *********************************************************************
 LPARAMETERS toErrorInfo AS Exception, tcRepository AS String, tcCursorName AS String
 
-LOCAL llSuccess, ;
-	lcChangesAlias
+LOCAL lcChangesAlias, ;
+	llSuccess
 
 tcCursorName = IIF( VARTYPE( m.tcCursorName ) = "C" AND NOT EMPTY( m.tcCursorName ), ;
 		m.tcCursorName, "C_BinaryFilesToConvert" + SYS(2015) )
@@ -2665,14 +2821,14 @@ FUNCTION RegenerateRepoProjects
 *********************************************************************
 LPARAMETERS toErrorInfo AS Exception, tcRepository AS String, tcFileListAlias AS String
 
-LOCAL lcRepository, ;
-	lcTextExtension, ;
-	laFileList[1], ;
-	lcMessage, ;
+LOCAL laFileList[1], ;
 	lcFullFileName, ;
+	lcMessage, ;
+	lcRepository, ;
+	lcTextExtension, ;
 	llProjectOpen, ;
-	loProject AS VisualFoxpro.IFoxProject, ;
 	llSuccess, ;
+	loProject AS VisualFoxpro.IFoxProject, ;
 	xx
 
 *-- Make sure we have a repository name.
@@ -2896,13 +3052,13 @@ FUNCTION RecompileRepoProgramFiles
 LPARAMETERS toErrorInfo AS Exception, tcRepository AS String, tcFileListAlias AS String
 
 LOCAL laFileList[1], ;
+	lcErrorMessages, ;
 	lcFullFileName, ;
 	lcMessage, ;
 	lcRepository, ;
 	lcSetNotify, ;
-	lcErrorMessages, ;
-	loErrorInfo AS Exception, ;
 	llSuccess, ;
+	loErrorInfo AS Exception, ;
 	xx
 
 *-- Make sure we have a repository name.
@@ -3044,9 +3200,9 @@ PROTECTED FUNCTION CleanupSQL
 *********************************************************************
 LPARAMETERS tcSQL AS String
 
-LOCAL lcSQL, ;
-	laLines[1], ;
-	lcLine
+LOCAL laLines[1], ;
+	lcLine, ;
+	lcSQL
 
 *!* MJP -- Removed 05/06/2015 16:59:29
 *!* *-- Call the VMP function that performs this task.  If this class is
@@ -3156,8 +3312,8 @@ PROTECTED FUNCTION AreTimestampsPreserved
 *********************************************************************
 LPARAMETERS tcRepository AS String, tcFileName AS String
 
-LOCAL llSaveTimestamps, ;
-	lcFileName
+LOCAL lcFileName, ;
+	llSaveTimestamps
 
 DO CASE
 	CASE This.inPreserveFileTimestamps = 2
@@ -3291,11 +3447,11 @@ FUNCTION GetProcessScope
 *********************************************************************
 LPARAMETERS tcScope AS String, tcFormCaption AS String
 
-LOCAL loScope, ;
-	llSuccess, ;
+LOCAL llSuccess, ;
+	loErrorInfo AS Exception, ;
+	loScope, ;
 	loScopeForm AS FrmScopeFinder OF "C:\Work\VFP\Shared\Tools\Thor\Tools\Procs\Thor_Proc_ScopeProcessor.vcx", ;
-	loShape AS Shape, ;
-	loErrorInfo AS Exception
+	loShape AS Shape
 
 *-- Create an object to return the scope information to the calling code.
 loScope = CREATEOBJECT( "Empty" )
@@ -3422,12 +3578,12 @@ PROTECTED FUNCTION GenerateMenuCode
 LPARAMETERS toErrorInfo AS Exception, tcMenuFile AS String
 
 LOCAL lcMenuFile, ;
-	lcTempProjectName, ;
-	loProject AS VisualFoxPro.IFoxProject, ;
 	lcProjectAlias, ;
-	lnWorkArea, ;
+	lcTempProjectName, ;
+	llSuccess, ;
 	lnMenuRecNo, ;
-	llSuccess
+	lnWorkArea, ;
+	loProject AS VisualFoxPro.IFoxProject
 
 lcTempProjectName = ADDBS( SYS(2023) ) + "GenerateMenu" + SYS(2015)
 lcProjectAlias = "C_GenerateMenuProject" + SYS(2015)
@@ -3603,8 +3759,8 @@ PROTECTED FUNCTION GetBin2PrgConverter
 *********************************************************************
 LPARAMETERS toErrorInfo AS Exception
 
-LOCAL loConverter, ;
-	lcBin2PrgPath
+LOCAL lcBin2PrgPath, ;
+	loConverter
 
 loConverter = .NULL.
 
@@ -3673,10 +3829,10 @@ PROTECTED FUNCTION ConvertVFPFile
 LPARAMETERS toErrorInfo AS Exception, tcInputFilename AS String, tcRepository AS String, ;
 			tlGenerateBinary AS Boolean
 
-LOCAL loConverter AS C_FoxBin2Prg OF "C:\Work\VFP\Shared\Tools\Thor\Tools\Components\FoxBin2Prg\FoxBin2Prg.PRG", ;
-	lcAltTextFilename, ;
+LOCAL lcAltTextFilename, ;
 	llGenerateText, ;
-	llSuccess
+	llSuccess, ;
+	loConverter AS C_FoxBin2Prg OF "C:\Work\VFP\Shared\Tools\Thor\Tools\Components\FoxBin2Prg\FoxBin2Prg.PRG"
 
 llGenerateText = ( NOT VARTYPE( m.tlGenerateBinary ) = "L" OR NOT m.tlGenerateBinary )
 llSuccess = .T.
@@ -3744,18 +3900,18 @@ PROTECTED FUNCTION AddUntrackedFilesToRepo
 *********************************************************************
 LPARAMETERS toErrorInfo AS Exception, tcRepository AS String
 
-LOCAL llSuccess, ;
-	lnWorkArea, ;
+LOCAL laOtherExt[1], ;
+	lcErrorMessage, ;
+	lcFileToAdd, ;
+	lcMainExtension, ;
 	lcStatusAlias, ;
+	lcTextExtension, ;
 	lcTrackedBinAlias, ;
 	lcUntrackedAlias, ;
-	lcMainExtension, ;
+	llSuccess, ;
 	lnExtensionCount, ;
-	laOtherExt[1], ;
-	lcTextExtension, ;
-	lcFileToAdd, ;
+	lnWorkArea, ;
 	loErrorInfo AS Exception, ;
-	lcErrorMessage, ;
 	xx
 
 lnWorkArea = SELECT()
@@ -3960,8 +4116,8 @@ PROTECTED FUNCTION GetTextExtension
 LPARAMETERS tcBinaryExtension AS String, tcFilePath AS String
 
 LOCAL lcFilePath, ;
-	loConverter AS C_FoxBin2Prg OF "C:\Work\VFP\Shared\Tools\Thor\Tools\Components\FoxBin2Prg\FoxBin2Prg.PRG", ;
-	lcTextExtension
+	lcTextExtension, ;
+	loConverter AS C_FoxBin2Prg OF "C:\Work\VFP\Shared\Tools\Thor\Tools\Components\FoxBin2Prg\FoxBin2Prg.PRG"
 
 *-- Text extensions can vary by folder.  We don't recommend doing that,
 *-- but we'll take that into account.  If the calling code didn't specify
@@ -4008,10 +4164,10 @@ PROTECTED FUNCTION GetTextFilename
 *********************************************************************
 LPARAMETERS tcBinaryFilename AS String, tcRepository AS String
 
-LOCAL lcTextFilename, ;
-	lcFilePath, ;
-	loConverter AS C_FoxBin2Prg OF "C:\Work\VFP\Shared\Tools\Thor\Tools\Components\FoxBin2Prg\FoxBin2Prg.PRG", ;
-	lcTextExtension
+LOCAL lcFilePath, ;
+	lcTextExtension, ;
+	lcTextFilename, ;
+	loConverter AS C_FoxBin2Prg OF "C:\Work\VFP\Shared\Tools\Thor\Tools\Components\FoxBin2Prg\FoxBin2Prg.PRG"
 
 *-- First check if the specified binary file uses an alternate text
 *-- file.
@@ -4115,9 +4271,9 @@ PROTECTED PROCEDURE GetAlternateTextList
 *********************************************************************
 LPARAMETERS tcRepository AS String
 
-LOCAL lcRepository, ;
+LOCAL laAlternateTextRaw[1], ;
 	lcAlternateTextFilename, ;
-	laAlternateTextRaw[1], ;
+	lcRepository, ;
 	lnLineCount, ;
 	lnRows, ;
 	xx
@@ -4252,8 +4408,8 @@ PROTECTED FUNCTION GetMainBinaryExtension
 *********************************************************************
 LPARAMETERS tcExtension AS String
 
-LOCAL lcExtension, ;
-	lcBinaryExtension
+LOCAL lcBinaryExtension, ;
+	lcExtension
 
 lcExtension = UPPER( PADR( m.tcExtension, 3 ) )
 
@@ -4305,9 +4461,9 @@ PROTECTED FUNCTION ExecCommandVFPBinary
 *********************************************************************
 LPARAMETERS toErrorInfo AS Exception, tcCommand AS String, tcFileName AS String
 
-LOCAL llSuccess, ;
+LOCAL lcExtensionExpr, ;
 	lcMainExtension, ;
-	lcExtensionExpr
+	llSuccess
 
 llSuccess = .T.
 
@@ -4369,13 +4525,13 @@ PROCEDURE SelfTest
 
 *!*	A method for code that can be run to test if this class is working properly.
 *********************************************************************
-LOCAL lcRepository, ;
-	loErrorInfo AS Exception, ;
-	lcAlias, ;
-	llSuccess, ;
-	lcResult, ;
+LOCAL lcAlias, ;
 	lcProjectName, ;
-	llCleanup
+	lcRepository, ;
+	lcResult, ;
+	llCleanup, ;
+	llSuccess, ;
+	loErrorInfo AS Exception
 
 lcRepository = "C:\Work\VFP\Shared\Lib"
 

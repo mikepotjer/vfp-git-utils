@@ -7,8 +7,8 @@ WITH toUpdateInfo
     .ApplicationName = 'Git Utilities (Beta)'
     .Component       = 'No'
     .ToolName        = 'Thor_Tool_ThorInternalRepository'
-    .VersionNumber   = 'v2016.06.11.beta'
-    .VersionDate     = DATE(2015, 6, 11)
+    .VersionNumber   = 'v2016.06.23.beta'
+    .VersionDate     = DATE(2015, 6, 23)
     .SourceFileUrl   = 'https://bitbucket.org/mikepotjer/vfp-git-utils/downloads/GitUtils-Beta.zip'
     .LinkPrompt      = 'Git Utilities for VFP Home Page'
     .Link            = 'https://bitbucket.org/mikepotjer/vfp-git-utils'
@@ -27,6 +27,9 @@ The Git Utilities ease the process of working with VFP's binary files when using
 These utilities require the Thor repository, FoxBin2Prg, Git for Windows, and the Windows Scripting Host.
 
 ==== Change History ====
+2016.06.23.beta
+ - When the "Prepare for Git commit" process is run for a project file, make sure the text file is regenerated for the project file (.PJX), even if the project file and its text file are not being tracked by a repository.  The 2016.06.11 beta disabled this behavior, since the enhancement to project file processing only included project files that were being tracked.
+
 2016.06.11.beta
  - Correct an issue where the modification date of a file that had just been edited could be reset to an earlier date during the "Prepare for Git commit" process.  This could occur if the timestamp file somehow ended up with duplicate entries for a file in the repository.  Duplicates are now removed when reading the file list from the timestamp file, and only the most recent timestamp is used for a duplicated file name.  This fix also removes the duplicates when the timestamp file is updated. (Thanks to Eddie Caldwell)
  - Enhance the "Prepare for Git commit" process so that if there are multiple .PJ2 files being tracked in a repository (and the .PJX files are not being tracked), all of the .PJ2 files will be regenerated.  Before, you had to run "Prepare for Git commit" with a specific .PJX file, and then only the .PJ2 file for that .PJX was regenerated.
