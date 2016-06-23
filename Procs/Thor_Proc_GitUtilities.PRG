@@ -406,11 +406,42 @@ LPARAMETERS toErrorInfo AS Exception, tcRepository AS String, taFileList
 
 EXTERNAL ARRAY taFileList
 
-LOCAL llSuccess, ;
-	lcFileList
+LOCAL lcCommand, ;
+	lcFileList, ;
+	lcRepoType, ;
+	llSuccess
+
+*!* *{ MJP -- 06/23/2016 15:47:27 - Begin
+llSuccess = .T.
+
+lcRepoType = This.GetRepoType( m.tcRepository )
+DO CASE
+	CASE m.lcRepoType = "G"
+		*-- Generate the command for retrieving a list of all files
+		*-- being tracked by a Git repository.
+		lcCommand = "git ls-files"
+
+	CASE m.lcRepoType = "M"
+		*-- Generate the command for retrieving a list of all files
+		*-- being tracked by a Mercurial repository.
+		lcCommand = "hg manifest"
+
+	OTHERWISE
+		*-- This folder is not a recognized repository, so generate an
+		*-- error message and abort.
+		lcCommand = SPACE(0)
+		llSuccess = .F.
+		TRY
+			ERROR "'" + m.tcRepository + "' is not a valid repository folder."
+		CATCH TO toErrorInfo
+		ENDTRY
+ENDCASE
 
 *-- Retrieve the list of files in the directory cache index.
-llSuccess = This.ExecuteCommand( @m.toErrorInfo, m.tcRepository, "git ls-files", @m.lcFileList )
+IF m.llSuccess
+	llSuccess = This.ExecuteCommand( @m.toErrorInfo, m.tcRepository, m.lcCommand, @m.lcFileList )
+ENDIF
+*!* *} MJP -- 06/23/2016 15:47:27 - End
 
 IF NOT m.llSuccess ;
 		OR EMPTY( m.lcFileList )
@@ -760,7 +791,7 @@ ENDFUNC
 FUNCTION FetchRepoStatus
 
 *!*	This method returns a cursor containing status information about the specified (or current)
-*!*	Git repository.
+*!*	Git or Hg repository.
 
 *!*	PARAMETERS:
 *!*		  toErrorInfo (O) -	A variable passed by reference to store any error info returned from
@@ -773,8 +804,8 @@ FUNCTION FetchRepoStatus
 *!*							repository.  It is not required to specify a cursor name, but if no
 *!*							name is specified, a variable should be passed here by reference to
 *!*							receive the name of the cursor generated.
-*!*			 tcFilter (O) -	A valid Git pathspec that will be used to filter the results of the
-*!*							status cursor.
+*!*			 tcFilter (O) -	A valid Git pathspec or Hg pattern that will be used to filter the results
+*!*							of the status cursor.
 
 *!*	RETURNS: Logical
 *!*		Returns true if the status of the repository can be successfully determined, otherwise
@@ -782,22 +813,27 @@ FUNCTION FetchRepoStatus
 *********************************************************************
 LPARAMETERS toErrorInfo AS Exception, tcRepository AS String, tcCursorName AS String, tcFilter AS String
 
-LOCAL llSuccess, ;
-	lcPathSpec, ;
-	lcStatusInfo, ;
-	laLines[1], ;
-	lnCount, ;
-	xx, ;
+LOCAL laLines[1], ;
+	lcFileExtension, ;
+	lcFileName, ;
 	lcIndexStatus, ;
+	lcOldFileName, ;
+	lcPathSpec, ;
+	lcRepoType, ;
+	lcStatusInfo, ;
 	lcWorkTreeStatus, ;
 	llMergeConflict, ;
-	lcFileName, ;
-	lcOldFileName, ;
-	lcFileExtension
+	llSuccess, ;
+	lnCount, ;
+	xx
 
 tcCursorName = IIF( VARTYPE( m.tcCursorName ) = "C" AND NOT EMPTY( m.tcCursorName ), ;
-		ALLTRIM( m.tcCursorName ), "C_GitRepoStatusResults" )
+		ALLTRIM( m.tcCursorName ), "C_RepoStatusResults" )
 USE IN SELECT( m.tcCursorName )
+
+*-- MJP -- 06/23/2016 05:12:25 PM
+*-- Determine the type of repository being processed.
+lcRepoType = This.GetRepoType( m.tcRepository )
 
 *-- MJP -- 10/12/2015 09:57:51 AM
 *-- If a filter was specified, use it as the pathspec for the status
@@ -832,8 +868,17 @@ CREATE CURSOR ( m.tcCursorName ) ;
 *-- output.
 *-- MJP -- 10/12/2015 09:59:19 AM
 *-- Add any pathspec specified by the calling code.
-llSuccess = This.ExecuteCommand( @m.toErrorInfo, m.tcRepository, "git status --porcelain" + m.lcPathSpec, ;
-		@m.lcStatusInfo )
+*-- MJP -- 06/23/2016 05:13:07 PM
+IF m.lcRepoType = "M"
+	*-- This is a Mercurial repository.  The pathspec should work the
+	*-- same as Git.
+	llSuccess = This.ExecuteCommand( @m.toErrorInfo, m.tcRepository, "hg status " + m.lcPathSpec, ;
+			@m.lcStatusInfo )
+ELSE
+	*-- This is (presumably) a Git repository.
+	llSuccess = This.ExecuteCommand( @m.toErrorInfo, m.tcRepository, ;
+			"git status --porcelain" + m.lcPathSpec, @m.lcStatusInfo )
+ENDIF
 
 *-- If the status command failed, or there are no changes to report,
 *-- then there's nothing more to do here.
@@ -846,28 +891,54 @@ ENDIF
 lnCount = ALINES( laLines, m.lcStatusInfo, 4 )
 
 FOR xx = 1 TO m.lnCount
-	*-- The first 2 characters are the status codes.
-	lcIndexStatus = LEFT( laLines[m.xx], 1 )
-	lcWorkTreeStatus = SUBSTR( laLines[m.xx], 2, 1 )
+	*{ MJP -- 06/23/2016 05:16:13 PM - Begin
+	IF m.lcRepoType = "M"
+		*-- Mercurial repository
+		*-- Hg only has one status code, so treat it like a "staged"
+		*-- change, and convert it to an equivalent Git status code.
+		lcIndexStatus = LEFT( laLines[m.xx], 1 )
+		lcIndexStatus = ICASE( m.lcIndexStatus = "R", "D", ;
+				m.lcIndexStatus = "I", "!", ;
+				INLIST( m.lcIndexStatus, "C", "!" ), SPACE(1), ;
+				m.lcIndexStatus )
 
-	*-- MJP -- 09/18/2015 03:07:24 PM
-	*-- Check for a merge conflict on this item.  See the git status
-	*-- documentation for an explanation of what these codes mean.
-	llMergeConflict = INLIST( m.lcIndexStatus + m.lcWorkTreeStatus, "DD", "AU", "UD", "UA", "DU", "AA", "UU" )
+		*-- The file name follows the status, separated by a space.
+		lcFileName = ALLTRIM( SUBSTR( laLines[m.xx], 2 ) )
 
-	*-- Check for file name changes.
-	IF OCCURS( "->", laLines[m.xx] ) = 0
-		*-- There is no "arrow", so the file name has not changed.
-		*-- The rest of the line is the name, and there is no new file
-		*-- name.
+		*-- Hg doesn't have an "unstaged" status.  Merge conflicts
+		*-- appear to be handled differently, so I won't try to determine
+		*-- that.  File renames don't have their own status code, and
+		*-- I don't know how to reliably determine that a rename occurred,
+		*-- so just leave the old file name blank.
+		lcWorkTreeStatus = SPACE(0)
+		llMergeConflict = .F.
 		lcOldFileName = SPACE(0)
-		lcFileName = ALLTRIM( SUBSTR( laLines[m.xx], 3 ) )
 	ELSE
-		*-- The file name has changed, so extract the original name to
-		*-- the left of the arrow, and the new name to the right.
-		lcOldFileName = ALLTRIM( STREXTRACT( laLines[m.xx], LEFT( laLines[m.xx], 2 ), "->" ) )
-		lcFileName = ALLTRIM( STREXTRACT( laLines[m.xx], "->" ) )
+		*-- Git repository
+		*-- The first 2 characters are the status codes.
+		lcIndexStatus = LEFT( laLines[m.xx], 1 )
+		lcWorkTreeStatus = SUBSTR( laLines[m.xx], 2, 1 )
+
+		*-- MJP -- 09/18/2015 03:07:24 PM
+		*-- Check for a merge conflict on this item.  See the git status
+		*-- documentation for an explanation of what these codes mean.
+		llMergeConflict = INLIST( m.lcIndexStatus + m.lcWorkTreeStatus, "DD", "AU", "UD", "UA", "DU", "AA", "UU" )
+
+		*-- Check for file name changes.
+		IF OCCURS( "->", laLines[m.xx] ) = 0
+			*-- There is no "arrow", so the file name has not changed.
+			*-- The rest of the line is the name, and there is no new file
+			*-- name.
+			lcOldFileName = SPACE(0)
+			lcFileName = ALLTRIM( SUBSTR( laLines[m.xx], 3 ) )
+		ELSE
+			*-- The file name has changed, so extract the original name to
+			*-- the left of the arrow, and the new name to the right.
+			lcOldFileName = ALLTRIM( STREXTRACT( laLines[m.xx], LEFT( laLines[m.xx], 2 ), "->" ) )
+			lcFileName = ALLTRIM( STREXTRACT( laLines[m.xx], "->" ) )
+		ENDIF
 	ENDIF
+	*} MJP -- 06/23/2016 05:16:13 PM - End
 
 	*-- Determine the file extension to report.
 	IF EMPTY( JUSTSTEM( m.lcFileName ) )
@@ -900,9 +971,51 @@ RETURN m.llSuccess
 ENDFUNC
 
 *********************************************************************
+FUNCTION GetRepoType
+
+*!*	This method attempts to determine if the specified folder is a repository, and if so, what type
+*!*	of repository (Git or Mercurial).
+
+*!*	PARAMETERS:
+*!*		 tcRepository (O) -	The full path to the repository folder whose repo type is to be retrieved.
+*!*							If omitted, the current folder will be used as the repository.
+
+*!*	RETURNS: Character
+*!*		"G" if the folder is a Git repository, "M" for a Mercurial repository, or a blank string if
+*!*		the folder is not a (recognized) repository.
+*********************************************************************
+LPARAMETERS tcRepository AS String
+
+LOCAL lcRepository, ;
+	lcRepoType
+
+lcRepoType = SPACE(0)
+lcRepository = This.GetRepositoryPath( m.tcRepository )
+
+DO CASE
+	CASE DIRECTORY( m.lcRepository + ".Git", 1 )
+		*-- The current folder contains the .Git folder (which is normally
+		*-- hidden), so this must be a Git repository.
+		lcRepoType = "G"
+
+	CASE DIRECTORY( m.lcRepository + ".Hg", 1 )
+		*-- The current folder contains the .Hg folder, which indicates
+		*-- this is a Mercurial repository.  Mercurial doesn't appear
+		*-- to hide its folder by default, but allow for that possibility
+		*-- here.
+		lcRepoType = "M"
+
+	OTHERWISE
+		*-- This folder is not a repository that is recognized here.
+ENDCASE
+
+RETURN m.lcRepoType
+ENDFUNC
+
+*********************************************************************
 FUNCTION GetRepoFolderForPath
 
-*!*	This method determines the Git repository folder, if any, for the specified folder.
+*!*	This method determines the Git or Hg repository folder, if any, for the specified folder.
 
 *!*	PARAMETERS:
 *!*		  toErrorInfo (O) -	A variable passed by reference to store any error info returned from
@@ -910,31 +1023,39 @@ FUNCTION GetRepoFolderForPath
 *!*							parameter is not required, but recommended.
 *!*		 tcFolderPath (R) -	The full path of a folder for which you want to determine the repository
 *!*							folder that it belongs to, if any.
+*!*		   tcRepoType (O) -	A variable passed by reference to store the type of repository for the
+*!*							specified folder.  This returns the same value as This.GetRepoType(),
+*!*							and will be blank if the specified folder is not in a repository.
 
 *!*	RETURNS: Character
 *!*		Returns the full path to the repository if one is found, otherwise returns an empty string.
 *********************************************************************
-LPARAMETERS toErrorInfo AS Exception, tcFolderPath AS String
+LPARAMETERS toErrorInfo AS Exception, tcFolderPath AS String, tcRepoType AS String
 
-LOCAL lcRepoFolder, ;
-	lcFolderPath
+LOCAL lcFolderPath, ;
+	lcRepoFolder, ;
+	lcRepoType
 
 lcRepoFolder = SPACE(0)
+tcRepoType = SPACE(0)
 lcFolderPath = ADDBS( m.tcFolderPath )
 
 DO WHILE OCCURS( "\", m.lcFolderPath ) > 1
-	IF DIRECTORY( m.lcFolderPath + ".Git", 1 )
-		*-- The current folder contains the .Git folder (which is normally
-		*-- hidden), so this must be a Git repository.
-		lcRepoFolder = ALLTRIM( m.lcFolderPath )
-		EXIT
-	ELSE
+	*-- Check if the current folder is a repository.
+	lcRepoType = This.GetRepoType( m.lcFolderPath )
+	IF EMPTY( m.lcRepoType )
 		*-- This folder is not a repository, so check if the parent
 		*-- folder is.  Note that although subfolders can be omitted
 		*-- from a repository, it will generally be safe to assume that
 		*-- any folder that is in the project will be managed by the
 		*-- repository of a parent folder.
 		lcFolderPath = LEFT( m.lcFolderPath, RAT( "\", m.lcFolderPath, 2 ) )
+	ELSE
+		*-- The current folder is a repository.  Store the folder and
+		*-- and the repository type.
+		lcRepoFolder = ALLTRIM( m.lcFolderPath )
+		tcRepoType = m.lcRepoType
+		EXIT
 	ENDIF
 ENDDO
 
@@ -4535,8 +4656,8 @@ LOCAL lcAlias, ;
 
 lcRepository = "C:\Work\VFP\Shared\Lib"
 
-lcRepository = GETDIR( m.lcRepository, "Select a Git repository to check its status", ;
-		"Select Git Repository", 1+64+512 )
+lcRepository = GETDIR( m.lcRepository, "Select a Git/Hg repository to check its status", ;
+		"Select Git/Hg Repository", 1+64+512 )
 IF EMPTY( m.lcRepository )
 	RETURN
 ENDIF
