@@ -4,31 +4,32 @@ LOCAL lcNote, ;
 	lcRegisterWithThor
 
 WITH toUpdateInfo
-    .ApplicationName = 'Git Utilities (Beta)'
+    .ApplicationName = 'Git/Hg Utilities (Beta)'
     .Component       = 'No'
     .ToolName        = 'Thor_Tool_ThorInternalRepository'
-    .VersionNumber   = 'v2016.06.23.beta'
-    .VersionDate     = DATE(2015, 6, 23)
+    .VersionNumber   = 'v2016.06.25.beta'
+    .VersionDate     = DATE(2015, 6, 25)
     .SourceFileUrl   = 'https://bitbucket.org/mikepotjer/vfp-git-utils/downloads/GitUtils-Beta.zip'
-    .LinkPrompt      = 'Git Utilities for VFP Home Page'
+    .LinkPrompt      = 'Git/Hg Utilities for VFP Home Page'
     .Link            = 'https://bitbucket.org/mikepotjer/vfp-git-utils'
 ENDWITH
 
 TEXT TO lcRegisterWithThor NOSHOW TEXTMERGE
-    MESSAGEBOX('From the Thor Launcher, see "Applications -> Git Utilities"' + CHR(13) ;
-        + SPACE(5) + 'and "Applications -> FoxBin2Prg"', 0 ,"Git Utilities installed", 5000)
+    MESSAGEBOX('From the Thor Launcher, see "Applications -> Git/Hg Utilities"' + CHR(13) ;
+        + SPACE(5) + 'and "Applications -> FoxBin2Prg"', 0 ,"Git/Hg Utilities installed", 5000)
 ENDTEXT
 
 ADDPROPERTY( toUpdateInfo, 'RegisterWithThor', lcRegisterWithThor )
 
 TEXT TO lcNote NOSHOW
-The Git Utilities ease the process of working with VFP's binary files when using Git as the source control provider, as well as making it easier to work with .PJX projects which contain files from multiple Git repositories.  See the tool home page for more information.
+The Git/Hg Utilities ease the process of working with VFP's binary files when using Git or Mercurial as the source control provider, as well as making it easier to work with .PJX projects which contain files from multiple Git or Mercurial repositories.  See the tool home page for more information.
 
-These utilities require the Thor repository, FoxBin2Prg, Git for Windows, and the Windows Scripting Host.
+These utilities require the Thor repository, FoxBin2Prg, Git for Windows or Mercurial for Windows, and the Windows Scripting Host.
 
 ==== Change History ====
-2016.06.23.beta
+2016.06.25.beta
  - When the "Prepare for Git commit" process is run for a project file, make sure the text file is regenerated for the project file (.PJX), even if the project file and its text file are not being tracked by a repository.  The 2016.06.11 beta disabled this behavior, since the enhancement to project file processing only included project files that were being tracked.
+ - Enhance all the utilities to support Mercurial repositories, and added an option to specify a different file name for the timestamp file in a Mercurial repository.
 
 2016.06.11.beta
  - Correct an issue where the modification date of a file that had just been edited could be reset to an earlier date during the "Prepare for Git commit" process.  This could occur if the timestamp file somehow ended up with duplicate entries for a file in the repository.  Duplicates are now removed when reading the file list from the timestamp file, and only the most recent timestamp is used for a duplicated file name.  This fix also removes the duplicates when the timestamp file is updated. (Thanks to Eddie Caldwell)

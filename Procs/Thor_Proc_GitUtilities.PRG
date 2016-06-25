@@ -616,14 +616,23 @@ FUNCTION RepoHasChanges
 *********************************************************************
 LPARAMETERS toErrorInfo AS Exception, tcRepository AS String
 
-LOCAL llSuccess, ;
+LOCAL lcCommand, ;
+	lcRepoType, ;
 	lcStatusInfo, ;
-	llHasChanges
+	llHasChanges, ;
+	llSuccess
 
 *-- Retrieve the git status using the static parseable format for the
 *-- output.
-llSuccess = This.ExecuteCommand( @m.toErrorInfo, m.tcRepository, "git status --porcelain", ;
-		@m.lcStatusInfo )
+*!* *{ MJP -- 06/25/2016 14:53:43 - Begin
+*!* llSuccess = This.ExecuteCommand( @m.toErrorInfo, m.tcRepository, "git status --porcelain", ;
+*!* 		@m.lcStatusInfo )
+*-- Determine the type of repository so the appropriate status command
+*-- can be used.
+lcRepoType = This.GetRepoType( m.tcRepository )
+lcCommand = IIF( m.lcRepoType = "M", "hg status", "git status --porcelain" )
+llSuccess = This.ExecuteCommand( @m.toErrorInfo, m.tcRepository, m.lcCommand, @m.lcStatusInfo )
+*!* *} MJP -- 06/25/2016 14:53:44 - End
 
 IF m.llSuccess
 	*-- The status info string will be blank if there are no changes.
@@ -1594,6 +1603,7 @@ LOCAL lcDefaultPath, ;
 	lcMainFileName, ;
 	lcMessage, ;
 	lcRelativeFileName, ;
+	lcRepoType, ;
 	lcRepository, ;
 	lcStatusAlias, ;
 	lcTextFileName, ;
@@ -1619,6 +1629,12 @@ IF m.llSuccess
 	lcRepository = This.GetRepositoryPath( m.tcRepository )
 	lcMessage = "Cleaning up Binary files for Repository:" + CHR(13) + m.lcRepository + CHR(13)
 
+	*{ MJP -- 06/25/2016 03:56:02 PM - Begin
+	*-- Get the type of repository, which is needed to generate the
+	*-- appropriate command to undo file changes.
+	lcRepoType = This.GetRepoType( m.lcRepository )
+	*} MJP -- 06/25/2016 03:56:02 PM - End
+
 	*-- Scan the cleanup list to confirm whether changes should be
 	*-- undone for any of the files.
 	SELECT ( m.tcFileListAlias )
@@ -1640,7 +1656,13 @@ IF m.llSuccess
 
 		*-- Check if the file is already staged for commit, in which
 		*-- case 2 steps are required to undo the changes.
-		llStaged = ( EVALUATE( m.lcStatusAlias + ".GS_IndexStatus" ) = "M" )
+		*-- MJP -- 06/25/2016 04:01:35 PM
+		*-- We only need the staged flag for a Git repository.
+		IF m.lcRepoType = "G"
+			llStaged = ( EVALUATE( m.lcStatusAlias + ".GS_IndexStatus" ) = "M" )
+		ELSE
+			llStaged = .F.
+		ENDIF
 
 		*-- The name of the main binary file is needed to retrieve the
 		*-- name of the corresponding text file.
@@ -1673,11 +1695,27 @@ IF m.llSuccess
 			llSuccess = This.ExecCommandVFPBinary( @m.toErrorInfo, "git reset", m.lcRelativeFileName )
 		ENDIF
 
-		*-- Checkout the last version of the file for the most recent
-		*-- commit in the current working tree.
-		IF m.llSuccess
-			llSuccess = This.ExecCommandVFPBinary( @m.toErrorInfo, "git checkout", m.lcRelativeFileName )
-		ENDIF
+		*!* *{ MJP -- 06/25/2016 16:03:47 - Begin
+		*!* *-- Checkout the last version of the file for the most recent
+		*!* *-- commit in the current working tree.
+		*!* IF m.llSuccess
+		*!* 	llSuccess = This.ExecCommandVFPBinary( @m.toErrorInfo, "git checkout", m.lcRelativeFileName )
+		*!* ENDIF
+		DO CASE
+			CASE NOT m.llSuccess
+				*-- Something already failed.
+
+			CASE m.lcRepoType = "M"
+				*-- In Mercurial, revert the change on the current
+				*-- revision, and don't create a backup (.orig) file.
+				llSuccess = This.ExecCommandVFPBinary( @m.toErrorInfo, "hg revert -C", m.lcRelativeFileName )
+
+			OTHERWISE
+				*-- In Git, checkout the last version of the file for
+				*-- the most recent commit in the current working tree.
+				llSuccess = This.ExecCommandVFPBinary( @m.toErrorInfo, "git checkout", m.lcRelativeFileName )
+		ENDCASE
+		*!* *} MJP -- 06/25/2016 16:03:47 - End
 	ENDSCAN
 
 	*-- If timestamps are being saved, restore the modification dates
@@ -2589,6 +2627,13 @@ ENDIF
 SELECT ( m.lcRepoListAlias )
 GO TOP
 SCAN
+	*{ MJP -- 06/25/2016 04:39:31 PM - Begin
+	*-- For now, don't allow tagging Mercurial repositories.
+	IF PF_RepositoryType = "M"
+		LOOP
+	ENDIF
+	*} MJP -- 06/25/2016 04:39:31 PM - End
+
 	*-- Attempt to tag the current repository.  An unsigned annotated
 	*-- tag (-a) will be created, and if the tag already exists it will
 	*-- be replaced (-f).  If we decide to make these options configurable
@@ -2652,6 +2697,13 @@ SELECT ( m.lcRepoListAlias )
 GO TOP
 SCAN
 	lcTagList = SPACE(0)
+
+	*{ MJP -- 06/25/2016 04:41:57 PM - Begin
+	*-- For now, don't allow untagging Mercurial repositories.
+	IF PF_RepositoryType = "M"
+		LOOP
+	ENDIF
+	*} MJP -- 06/25/2016 04:41:57 PM - End
 
 	*-- Attempt to lookup the specified tag in the current repository.
 	DO CASE
@@ -4635,8 +4687,8 @@ ENDFUNC
 *********************************************************************
 PROTECTED FUNCTION ExecCommandVFPBinary
 
-*!*	This method attempts to execute a Git command for the specified VFP binary file.  Since VFP
-*!*	binaries are composed of 2 or 3 files, this method attempts to execute the command for all
+*!*	This method attempts to execute a Git or Hg command for the specified VFP binary file.  Since
+*!* VFP	binaries are composed of 2 or 3 files, this method attempts to execute the command for all
 *!*	the companion files of the "main" binary file as well.
 
 *!*	NOTES:
@@ -4647,12 +4699,14 @@ PROTECTED FUNCTION ExecCommandVFPBinary
 *!*		  toErrorInfo (O) -	A variable passed by reference to store any error info returned from
 *!*							this method.  This will be returned as an Exception object.  This
 *!*							parameter is not required, but recommended.
-*!*			tcCommand (R) -	The Git command to execute.  This expected to be a command that works
-*!*							with individual files AND file masks, such as:
+*!*			tcCommand (R) -	The Git or Hg command to execute.  This is expected to be a command that
+*!*							works with individual files AND file masks, such as:
 *!*								git reset
 *!*								git checkout
 *!*								git clean
 *!*								git add
+*!*								hg revert
+*!*								hg add
 *!*		   tcFileName (R) -	The name of the main VFP binary file that the command is to be applied
 *!*							to.  The command will be applied to the companion files also.
 *!*							Note that a) the case of the file name is assumed to be the same as
@@ -4666,7 +4720,9 @@ PROTECTED FUNCTION ExecCommandVFPBinary
 *********************************************************************
 LPARAMETERS toErrorInfo AS Exception, tcCommand AS String, tcFileName AS String
 
-LOCAL lcExtensionExpr, ;
+LOCAL lcBeginDelim, ;
+	lcEndDelim, ;
+	lcExtensionExpr, ;
 	lcMainExtension, ;
 	llSuccess
 
@@ -4678,6 +4734,19 @@ tcFileName = ALLTRIM( m.tcFileName )
 *-- which will allow us to call this method for the "companion" files
 *-- as well as the main file.
 lcMainExtension = This.GetMainBinaryExtension( JUSTEXT( m.tcFileName ) )
+
+*{ MJP -- 06/25/2016 03:40:28 PM - Begin
+IF LOWER( GETWORDNUM( m.tcCommand, 1 ) ) = "git"
+	*-- For Git commands, the file mask needs to be surrounded by quotes
+	*-- and preceeded with a double-dash.
+	lcBeginDelim = ' -- "'
+	lcEndDelim = '"'
+ELSE
+	*-- In Mercurial, file masks don't need any special delimiters.
+	lcBeginDelim = SPACE(1)
+	lcEndDelim = SPACE(0)
+ENDIF
+*} MJP -- 06/25/2016 03:40:28 PM - End
 
 DO CASE
 	CASE ( "|" + m.lcMainExtension + "|" ) $ "|VCX|SCX|FRX|LBX|MNX|PJX|"
@@ -4697,19 +4766,19 @@ DO CASE
 				+ "[" + UPPER( SUBSTR( m.lcMainExtension, 2, 1 ) ) ;
 				+ LOWER( SUBSTR( m.lcMainExtension, 2, 1 ) ) + "][TtXx]"
 
-		llSuccess = This.ExecuteCommand( @m.toErrorInfo, .NULL., m.tcCommand + ' -- "' ;
-				+ LEFT( m.tcFileName, LENC( m.tcFileName ) - 3 ) + m.lcExtensionExpr + '"' )
+		llSuccess = This.ExecuteCommand( @m.toErrorInfo, .NULL., m.tcCommand + m.lcBeginDelim ;
+				+ LEFT( m.tcFileName, LENC( m.tcFileName ) - 3 ) + m.lcExtensionExpr + m.lcEndDelim )
 		*!* *} MJP -- 06/04/2015 08:38:38 - End
 
 	CASE m.lcMainExtension = "DBC"
 		*-- The .DBC is a set of 3 files with a little different naming
 		*-- convention.  Explicitly specify the extension for all of
 		*-- the files, in case it wasn't the .DBC itself that was passed.
-		llSuccess = This.ExecuteCommand( @m.toErrorInfo, .NULL., m.tcCommand + ' -- "' ;
-				+ LEFT( m.tcFileName, LENC( m.tcFileName ) - 3 ) + '[Dd][Bb][Cc]"' )
+		llSuccess = This.ExecuteCommand( @m.toErrorInfo, .NULL., m.tcCommand + m.lcBeginDelim ;
+				+ LEFT( m.tcFileName, LENC( m.tcFileName ) - 3 ) + '[Dd][Bb][Cc]' + m.lcEndDelim )
 		IF m.llSuccess
-			llSuccess = This.ExecuteCommand( @m.toErrorInfo, .NULL., m.tcCommand + ' -- "' ;
-					+ LEFT( m.tcFileName, LENC( m.tcFileName ) - 3 ) + '[Dd][Cc][TtXx]"' )
+			llSuccess = This.ExecuteCommand( @m.toErrorInfo, .NULL., m.tcCommand + m.lcBeginDelim ;
+					+ LEFT( m.tcFileName, LENC( m.tcFileName ) - 3 ) + '[Dd][Cc][TtXx]' + m.lcEndDelim )
 		ENDIF
 
 	CASE m.lcMainExtension = "DBF"
