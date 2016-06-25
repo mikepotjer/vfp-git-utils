@@ -16,30 +16,30 @@ IF PCOUNT() = 1 ;
 
 		* Required
 		.Prompt		   = TOOL_PROMPT && used when tool appears in a menu
-		.Summary       = 'Synchronize uncommitted files in a VFP project or repository with files committed to a Git repository'
+		.Summary       = 'Synchronize uncommitted files in a VFP project or repository with files committed to a Git or Mercurial repository'
 
 		* Optional
 		Text to .Description NoShow && a description for the tool
-Synchronizes files that are not part of a repository with their counterparts that are committed to a selected repository, or in the Git repositories of the selected project.  This includes:
+Synchronizes files that are not part of a repository with their counterparts that are committed to a selected repository, or in the Git/Mercurial repositories of the selected project.  This includes:
 
   - Regenerating .PJX files from the text files
   - Regenerating and compiling menu code from the binary menu files (.MNX)
   - Recompiling program files.
 
-This tool would typically be run after performing a Git checkout of a different branch of some repository containing VFP files.
+This tool would typically be run after performing a Git checkout or Hg revert of a different branch of some repository containing VFP files.
 
-This tool requires Git for Windows, FoxBin2Prg, and some Thor Repository tools.
+This tool requires Git for Windows or Mercurial for Windows, FoxBin2Prg, and some Thor Repository tools.
 		EndText 
 		.StatusBarText = .Summary
 		.CanRunAtStartUp = .F.
 
 		* These are used to group and sort tools when they are displayed in menus or the Thor form
 		.Source		   = 'MJP' && where did this tool come from?  Your own initials, for instance
-		.Category      = 'Applications|Git Utilities' && allows categorization for tools with the same source
+		.Category      = 'Applications|Git/Hg Utilities' && allows categorization for tools with the same source
 		.Sort		   = 0 && the sort order for all items from the same Source, Category and Sub-Category
 
 		* For public tools, such as PEM Editor, etc.
-		.Version	   = '2015.07.09' && e.g., 'Version 7, May 18, 2011'
+		.Version	   = '2016.06.24' && e.g., 'Version 7, May 18, 2011'
 		.Author        = 'Mike Potjer'
 		*!* .Link          = 'https://github.com/mikepotjer/vfp-git-utils'	&& 'http://www.optimalinternet.com/' && link to a page for this tool
 		.Link          = 'https://bitbucket.org/mikepotjer/vfp-git-utils'	&& 'http://www.optimalinternet.com/' && link to a page for this tool
@@ -48,7 +48,7 @@ This tool requires Git for Windows, FoxBin2Prg, and some Thor Repository tools.
 		*-- This tool restores timestamps, if applicable, so include
 		*-- the timestamp options with this tool.
 		.OptionTool    = ccToolName
-		.OptionClasses = "clsPreserveTimestamp, clsTimestampFileName"
+		.OptionClasses = "clsPreserveTimestamp, clsGitTimestampFileName, clsHgTimestampFileName"
 	ENDWITH
 
 	RETURN m.lxParam1
@@ -136,9 +136,17 @@ DEFINE CLASS clsPreserveTimestamp AS Custom
 	EditClassName = [ccEditClassName of Thor_Proc_GitUtilities.PRG]
 ENDDEFINE
 
-DEFINE CLASS clsTimestampFileName AS Custom
+DEFINE CLASS clsGitTimestampFileName AS Custom
 	Tool = ccToolName
-	Key = ccKeyTimestampFileName
-	Value = ccInitialValueTSFileName
+	Key = ccKeyGitTimestampFileName
+	Value = ccInitialValueGitTSFileName
+	EditClassName = [ccEditClassName of Thor_Proc_GitUtilities.PRG]
+ENDDEFINE
+
+*-- MJP -- 06/24/2016 04:24:39 PM
+DEFINE CLASS clsHgTimestampFileName AS Custom
+	Tool = ccToolName
+	Key = ccKeyHgTimestampFileName
+	Value = ccInitialValueHgTSFileName
 	EditClassName = [ccEditClassName of Thor_Proc_GitUtilities.PRG]
 ENDDEFINE
