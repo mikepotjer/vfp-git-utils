@@ -5,6 +5,10 @@
 #DEFINE ccOptionClassPreserveTS		clsPreserveTimestampsOption
 #DEFINE ccInitialValuePreserveTS	2
 
-#DEFINE ccKeyTimestampFileName		"Timestamp file name"
-#DEFINE ccOptionClassTSFileName		clsTimestampFileNameOption
-#DEFINE ccInitialValueTSFileName	".gittimestamp"
+#DEFINE ccKeyGitTimestampFileName	"Timestamp file name"
+#DEFINE ccOptionClassGitTSFileName	clsGitTimestampFileNameOption
+#DEFINE ccInitialValueGitTSFileName	".gittimestamp"
+
+#DEFINE ccKeyHgTimestampFileName	"Hg Timestamp file name"
+#DEFINE ccOptionClassHgTSFileName	clsHgTimestampFileNameOption
+#DEFINE ccInitialValueHgTSFileName	".hgtimestamp"

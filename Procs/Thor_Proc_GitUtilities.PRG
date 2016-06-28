@@ -84,9 +84,10 @@ EXTERNAL FILES:
 	Timestamp File
 	==============
 	This class can maintain text files to store timestamps for all the files in a repository,
-	since Git does not preserve modification dates for the files it tracks in the repository.
-	The default name for the timestamp is stored in This.icTimestampFilename.  Since the file
-	is maintained entirely by this class, its structure is not important, but you can learn
+	since Git and Mercurial do not preserve modification dates for the files they track in the
+	repository.  The default name for the timestamp file is stored in This.icGitTimestampFilename
+	for Git repositories and This.icHgTimestampFilename for Mercurial repositories.  Since the
+	file is maintained entirely by this class, its structure is not important, but you can learn
 	more in the header comments for This.SaveRepoTimestampFile().  The file is stored in the
 	root folder of the repository.
 
@@ -96,12 +97,12 @@ EXTERNAL FILES:
 	with the VFP binary files, and that the text files will use the default FoxBin2Prg extensions.
 	However, if some other form of text file is being used for a particular binary file, that can
 	be defined in this mapping file.  The default name for this mapping file is defined in
-	This.icAlternateTextFilename.  This file must be created in the root folder of the repository.
-	If an alternate mapping is defined for a file, then you are responsible for generating the
-	text file, and this class will NOT call FoxBin2Prg to generate a text file for that binary
-	file.  Both file names in the mapping MUST include the file extension.  Note that if you
-	don't want ANY text file associated with a VFP binary file, then don't enter anything to the
-	right of the equal (=) sign.
+	This.icGitAlternateTextFilename (for Git) and This.icHgAlternateTextFilename (for Mercurial).
+	This file must be created in the root folder of the repository.  If an alternate mapping is
+	defined for a file, then you are responsible for generating the text file, and this class will
+	NOT call FoxBin2Prg to generate a text file for that binary file.  Both file names in the
+	mapping MUST include the file extension.  Note that if you don't want ANY text file associated
+	with a VFP binary file, then don't enter anything to the right of the equal (=) sign.
 	The mappings must be defined in the format:
 		<binary file name>=<text file name>
 
@@ -148,10 +149,17 @@ ilPromptForProject = .T.
 inPreserveFileTimestamps = ccInitialValuePreserveTS	&& 2
 
 *-- Stores the default name of the timestamp file which stores the
-*-- modification dates of the files in the repositories.  This was
+*-- modification dates of the files in Git repositories.  This was
 *-- changed from a constant to a property so that it can be changed at
 *-- runtime.
-icTimestampFilename = ccInitialValueTSFileName	&& ".gittimestamp"
+icGitTimestampFilename = ccInitialValueGitTSFileName	&& ".gittimestamp"
+
+*{ MJP -- 06/24/2016 03:21:51 PM - Begin
+*-- Stores the default name of the timestamp file which stores the
+*-- modification dates of the files in Mercurial repositories.  This
+*-- is a property so that it can be changed at runtime.
+icHgTimestampFilename = ccInitialValueHgTSFileName	&& ".hgtimestamp"
+*} MJP -- 06/24/2016 03:21:51 PM - End
 
 *-- Stores the full path to the FoxBin2Prg.EXE app.  This can be set
 *-- manually if FoxBin2Prg is in a non-standard folder where this class
@@ -178,10 +186,16 @@ PROTECTED icVFPBinaryExtensionMapAlias
 *-- files to be associated with a VFP binary file.  This will be used
 *-- in determining whether to run FoxBin2Prg on a binary file, and it
 *-- will be used to determine whether to undo changes to a binary file.
-icAlternateTextFilename = ".gitvfpalttext"
+icGitAlternateTextFilename = ".gitvfpalttext"
+
+*{ MJP -- 06/24/2016 05:59:52 PM - Begin
+*-- Stores the default name of the file which defines alternate text
+*-- files to be associated with a VFP binary file in a Git repository.
+icHgAlternateTextFilename = ".hgvfpalttext"
+*} MJP -- 06/24/2016 05:59:52 PM - End
 
 *-- This array stores the alternate text file mappings stored in the
-*-- file specified by icAlternateTextFilename.
+*-- file specified by icGitAlternateTextFilename and icHgAlternateTextFilename.
 DIMENSION iaAlternateText[1]
 iaAlternateText = .NULL.
 
@@ -215,13 +229,24 @@ IF VARTYPE( m.luValue ) = "N" ;
 	This.inPreserveFileTimestamps = m.luValue
 ENDIF
 
-*-- Retrieve file name to use for the timestamp file.  If it's valid,
-*-- use it, but make sure it doesn't include any path info.
-luValue = EXECSCRIPT( _Screen.cThorDispatcher, "Get Option=", ccKeyTimestampFileName, ccToolName )
+*-- Retrieve the file name to use for the Git timestamp file.  If it's
+*-- valid, use it, but make sure it doesn't include any path info.
+luValue = EXECSCRIPT( _Screen.cThorDispatcher, "Get Option=", ccKeyGitTimestampFileName, ccToolName )
 IF VARTYPE( m.luValue ) = "C" ;
 		AND NOT EMPTY( m.luValue )
-	This.icTimestampFilename = JUSTFNAME( m.luValue )
+	This.icGitTimestampFilename = JUSTFNAME( m.luValue )
 ENDIF
+
+*{ MJP -- 06/25/2016 01:54:19 PM - Begin
+*-- Retrieve the file name to use for the Mercurial timestamp file.
+*-- If it's valid, use it, but make sure it doesn't include any path
+*-- info.
+luValue = EXECSCRIPT( _Screen.cThorDispatcher, "Get Option=", ccKeyHgTimestampFileName, ccToolName )
+IF VARTYPE( m.luValue ) = "C" ;
+		AND NOT EMPTY( m.luValue )
+	This.icHgTimestampFilename = JUSTFNAME( m.luValue )
+ENDIF
+*} MJP -- 06/25/2016 01:54:19 PM - End
 
 ENDPROC
 
@@ -406,11 +431,42 @@ LPARAMETERS toErrorInfo AS Exception, tcRepository AS String, taFileList
 
 EXTERNAL ARRAY taFileList
 
-LOCAL llSuccess, ;
-	lcFileList
+LOCAL lcCommand, ;
+	lcFileList, ;
+	lcRepoType, ;
+	llSuccess
+
+*!* *{ MJP -- 06/23/2016 15:47:27 - Begin
+llSuccess = .T.
+
+lcRepoType = This.GetRepoType( m.tcRepository )
+DO CASE
+	CASE m.lcRepoType = "G"
+		*-- Generate the command for retrieving a list of all files
+		*-- being tracked by a Git repository.
+		lcCommand = "git ls-files"
+
+	CASE m.lcRepoType = "M"
+		*-- Generate the command for retrieving a list of all files
+		*-- being tracked by a Mercurial repository.
+		lcCommand = "hg manifest"
+
+	OTHERWISE
+		*-- This folder is not a recognized repository, so generate an
+		*-- error message and abort.
+		lcCommand = SPACE(0)
+		llSuccess = .F.
+		TRY
+			ERROR "'" + m.tcRepository + "' is not a valid repository folder."
+		CATCH TO toErrorInfo
+		ENDTRY
+ENDCASE
 
 *-- Retrieve the list of files in the directory cache index.
-llSuccess = This.ExecuteCommand( @m.toErrorInfo, m.tcRepository, "git ls-files", @m.lcFileList )
+IF m.llSuccess
+	llSuccess = This.ExecuteCommand( @m.toErrorInfo, m.tcRepository, m.lcCommand, @m.lcFileList )
+ENDIF
+*!* *} MJP -- 06/23/2016 15:47:27 - End
 
 IF NOT m.llSuccess ;
 		OR EMPTY( m.lcFileList )
@@ -560,14 +616,23 @@ FUNCTION RepoHasChanges
 *********************************************************************
 LPARAMETERS toErrorInfo AS Exception, tcRepository AS String
 
-LOCAL llSuccess, ;
+LOCAL lcCommand, ;
+	lcRepoType, ;
 	lcStatusInfo, ;
-	llHasChanges
+	llHasChanges, ;
+	llSuccess
 
 *-- Retrieve the git status using the static parseable format for the
 *-- output.
-llSuccess = This.ExecuteCommand( @m.toErrorInfo, m.tcRepository, "git status --porcelain", ;
-		@m.lcStatusInfo )
+*!* *{ MJP -- 06/25/2016 14:53:43 - Begin
+*!* llSuccess = This.ExecuteCommand( @m.toErrorInfo, m.tcRepository, "git status --porcelain", ;
+*!* 		@m.lcStatusInfo )
+*-- Determine the type of repository so the appropriate status command
+*-- can be used.
+lcRepoType = This.GetRepoType( m.tcRepository )
+lcCommand = IIF( m.lcRepoType = "M", "hg status", "git status --porcelain" )
+llSuccess = This.ExecuteCommand( @m.toErrorInfo, m.tcRepository, m.lcCommand, @m.lcStatusInfo )
+*!* *} MJP -- 06/25/2016 14:53:44 - End
 
 IF m.llSuccess
 	*-- The status info string will be blank if there are no changes.
@@ -760,7 +825,7 @@ ENDFUNC
 FUNCTION FetchRepoStatus
 
 *!*	This method returns a cursor containing status information about the specified (or current)
-*!*	Git repository.
+*!*	Git or Hg repository.
 
 *!*	PARAMETERS:
 *!*		  toErrorInfo (O) -	A variable passed by reference to store any error info returned from
@@ -773,8 +838,8 @@ FUNCTION FetchRepoStatus
 *!*							repository.  It is not required to specify a cursor name, but if no
 *!*							name is specified, a variable should be passed here by reference to
 *!*							receive the name of the cursor generated.
-*!*			 tcFilter (O) -	A valid Git pathspec that will be used to filter the results of the
-*!*							status cursor.
+*!*			 tcFilter (O) -	A valid Git pathspec or Hg pattern that will be used to filter the results
+*!*							of the status cursor.
 
 *!*	RETURNS: Logical
 *!*		Returns true if the status of the repository can be successfully determined, otherwise
@@ -782,22 +847,27 @@ FUNCTION FetchRepoStatus
 *********************************************************************
 LPARAMETERS toErrorInfo AS Exception, tcRepository AS String, tcCursorName AS String, tcFilter AS String
 
-LOCAL llSuccess, ;
-	lcPathSpec, ;
-	lcStatusInfo, ;
-	laLines[1], ;
-	lnCount, ;
-	xx, ;
+LOCAL laLines[1], ;
+	lcFileExtension, ;
+	lcFileName, ;
 	lcIndexStatus, ;
+	lcOldFileName, ;
+	lcPathSpec, ;
+	lcRepoType, ;
+	lcStatusInfo, ;
 	lcWorkTreeStatus, ;
 	llMergeConflict, ;
-	lcFileName, ;
-	lcOldFileName, ;
-	lcFileExtension
+	llSuccess, ;
+	lnCount, ;
+	xx
 
 tcCursorName = IIF( VARTYPE( m.tcCursorName ) = "C" AND NOT EMPTY( m.tcCursorName ), ;
-		ALLTRIM( m.tcCursorName ), "C_GitRepoStatusResults" )
+		ALLTRIM( m.tcCursorName ), "C_RepoStatusResults" )
 USE IN SELECT( m.tcCursorName )
+
+*-- MJP -- 06/23/2016 05:12:25 PM
+*-- Determine the type of repository being processed.
+lcRepoType = This.GetRepoType( m.tcRepository )
 
 *-- MJP -- 10/12/2015 09:57:51 AM
 *-- If a filter was specified, use it as the pathspec for the status
@@ -832,8 +902,17 @@ CREATE CURSOR ( m.tcCursorName ) ;
 *-- output.
 *-- MJP -- 10/12/2015 09:59:19 AM
 *-- Add any pathspec specified by the calling code.
-llSuccess = This.ExecuteCommand( @m.toErrorInfo, m.tcRepository, "git status --porcelain" + m.lcPathSpec, ;
-		@m.lcStatusInfo )
+*-- MJP -- 06/23/2016 05:13:07 PM
+IF m.lcRepoType = "M"
+	*-- This is a Mercurial repository.  The pathspec should work the
+	*-- same as Git.
+	llSuccess = This.ExecuteCommand( @m.toErrorInfo, m.tcRepository, "hg status " + m.lcPathSpec, ;
+			@m.lcStatusInfo )
+ELSE
+	*-- This is (presumably) a Git repository.
+	llSuccess = This.ExecuteCommand( @m.toErrorInfo, m.tcRepository, ;
+			"git status --porcelain" + m.lcPathSpec, @m.lcStatusInfo )
+ENDIF
 
 *-- If the status command failed, or there are no changes to report,
 *-- then there's nothing more to do here.
@@ -846,28 +925,60 @@ ENDIF
 lnCount = ALINES( laLines, m.lcStatusInfo, 4 )
 
 FOR xx = 1 TO m.lnCount
-	*-- The first 2 characters are the status codes.
-	lcIndexStatus = LEFT( laLines[m.xx], 1 )
-	lcWorkTreeStatus = SUBSTR( laLines[m.xx], 2, 1 )
+	*{ MJP -- 06/23/2016 05:16:13 PM - Begin
+	IF m.lcRepoType = "M"
+		*-- Mercurial repository
+		*-- Hg only has one status code, so treat it like a "staged"
+		*-- change, and convert it to an equivalent Git status code.
+		lcIndexStatus = LEFT( laLines[m.xx], 1 )
+		lcIndexStatus = ICASE( m.lcIndexStatus = "R", "D", ;
+				m.lcIndexStatus = "I", "!", ;
+				INLIST( m.lcIndexStatus, "C", "!" ), SPACE(1), ;
+				m.lcIndexStatus )
 
-	*-- MJP -- 09/18/2015 03:07:24 PM
-	*-- Check for a merge conflict on this item.  See the git status
-	*-- documentation for an explanation of what these codes mean.
-	llMergeConflict = INLIST( m.lcIndexStatus + m.lcWorkTreeStatus, "DD", "AU", "UD", "UA", "DU", "AA", "UU" )
+		*-- The file name follows the status, separated by a space.
+		lcFileName = ALLTRIM( SUBSTR( laLines[m.xx], 2 ) )
 
-	*-- Check for file name changes.
-	IF OCCURS( "->", laLines[m.xx] ) = 0
-		*-- There is no "arrow", so the file name has not changed.
-		*-- The rest of the line is the name, and there is no new file
-		*-- name.
+		*-- Hg doesn't have an "unstaged" status, so we'll treat all
+		*-- files as "staged", except for untracked files (?).  Store
+		*-- the untracked status in both fields, so that methods that
+		*-- deal with untracked files can handle Hg the same as Git.
+		lcWorkTreeStatus = IIF( m.lcIndexStatus = "?", "?", SPACE(1) )
+
+		*-- Merge conflicts appear to be handled differently, so I'm
+		*-- not going to try to determine that.
+		llMergeConflict = .F.
+
+		*-- File renames don't have their own status code, and I don't
+		*-- know how to reliably determine that a rename occurred, so
+		*-- just leave the old file name blank.
 		lcOldFileName = SPACE(0)
-		lcFileName = ALLTRIM( SUBSTR( laLines[m.xx], 3 ) )
 	ELSE
-		*-- The file name has changed, so extract the original name to
-		*-- the left of the arrow, and the new name to the right.
-		lcOldFileName = ALLTRIM( STREXTRACT( laLines[m.xx], LEFT( laLines[m.xx], 2 ), "->" ) )
-		lcFileName = ALLTRIM( STREXTRACT( laLines[m.xx], "->" ) )
+		*-- Git repository
+		*-- The first 2 characters are the status codes.
+		lcIndexStatus = LEFT( laLines[m.xx], 1 )
+		lcWorkTreeStatus = SUBSTR( laLines[m.xx], 2, 1 )
+
+		*-- MJP -- 09/18/2015 03:07:24 PM
+		*-- Check for a merge conflict on this item.  See the git status
+		*-- documentation for an explanation of what these codes mean.
+		llMergeConflict = INLIST( m.lcIndexStatus + m.lcWorkTreeStatus, "DD", "AU", "UD", "UA", "DU", "AA", "UU" )
+
+		*-- Check for file name changes.
+		IF OCCURS( "->", laLines[m.xx] ) = 0
+			*-- There is no "arrow", so the file name has not changed.
+			*-- The rest of the line is the name, and there is no new file
+			*-- name.
+			lcOldFileName = SPACE(0)
+			lcFileName = ALLTRIM( SUBSTR( laLines[m.xx], 3 ) )
+		ELSE
+			*-- The file name has changed, so extract the original name to
+			*-- the left of the arrow, and the new name to the right.
+			lcOldFileName = ALLTRIM( STREXTRACT( laLines[m.xx], LEFT( laLines[m.xx], 2 ), "->" ) )
+			lcFileName = ALLTRIM( STREXTRACT( laLines[m.xx], "->" ) )
+		ENDIF
 	ENDIF
+	*} MJP -- 06/23/2016 05:16:13 PM - End
 
 	*-- Determine the file extension to report.
 	IF EMPTY( JUSTSTEM( m.lcFileName ) )
@@ -900,9 +1011,51 @@ RETURN m.llSuccess
 ENDFUNC
 
 *********************************************************************
+FUNCTION GetRepoType
+
+*!*	This method attempts to determine if the specified folder is a repository, and if so, what type
+*!*	of repository (Git or Mercurial).
+
+*!*	PARAMETERS:
+*!*		 tcRepository (O) -	The full path to the repository folder whose repo type is to be retrieved.
+*!*							If omitted, the current folder will be used as the repository.
+
+*!*	RETURNS: Character
+*!*		"G" if the folder is a Git repository, "M" for a Mercurial repository, or a blank string if
+*!*		the folder is not a (recognized) repository.
+*********************************************************************
+LPARAMETERS tcRepository AS String
+
+LOCAL lcRepository, ;
+	lcRepoType
+
+lcRepoType = SPACE(0)
+lcRepository = This.GetRepositoryPath( m.tcRepository )
+
+DO CASE
+	CASE DIRECTORY( m.lcRepository + ".Git", 1 )
+		*-- The current folder contains the .Git folder (which is normally
+		*-- hidden), so this must be a Git repository.
+		lcRepoType = "G"
+
+	CASE DIRECTORY( m.lcRepository + ".Hg", 1 )
+		*-- The current folder contains the .Hg folder, which indicates
+		*-- this is a Mercurial repository.  Mercurial doesn't appear
+		*-- to hide its folder by default, but allow for that possibility
+		*-- here.
+		lcRepoType = "M"
+
+	OTHERWISE
+		*-- This folder is not a repository that is recognized here.
+ENDCASE
+
+RETURN m.lcRepoType
+ENDFUNC
+
+*********************************************************************
 FUNCTION GetRepoFolderForPath
 
-*!*	This method determines the Git repository folder, if any, for the specified folder.
+*!*	This method determines the Git or Hg repository folder, if any, for the specified folder.
 
 *!*	PARAMETERS:
 *!*		  toErrorInfo (O) -	A variable passed by reference to store any error info returned from
@@ -910,31 +1063,39 @@ FUNCTION GetRepoFolderForPath
 *!*							parameter is not required, but recommended.
 *!*		 tcFolderPath (R) -	The full path of a folder for which you want to determine the repository
 *!*							folder that it belongs to, if any.
+*!*		   tcRepoType (O) -	A variable passed by reference to store the type of repository for the
+*!*							specified folder.  This returns the same value as This.GetRepoType(),
+*!*							and will be blank if the specified folder is not in a repository.
 
 *!*	RETURNS: Character
 *!*		Returns the full path to the repository if one is found, otherwise returns an empty string.
 *********************************************************************
-LPARAMETERS toErrorInfo AS Exception, tcFolderPath AS String
+LPARAMETERS toErrorInfo AS Exception, tcFolderPath AS String, tcRepoType AS String
 
-LOCAL lcRepoFolder, ;
-	lcFolderPath
+LOCAL lcFolderPath, ;
+	lcRepoFolder, ;
+	lcRepoType
 
 lcRepoFolder = SPACE(0)
+tcRepoType = SPACE(0)
 lcFolderPath = ADDBS( m.tcFolderPath )
 
 DO WHILE OCCURS( "\", m.lcFolderPath ) > 1
-	IF DIRECTORY( m.lcFolderPath + ".Git", 1 )
-		*-- The current folder contains the .Git folder (which is normally
-		*-- hidden), so this must be a Git repository.
-		lcRepoFolder = ALLTRIM( m.lcFolderPath )
-		EXIT
-	ELSE
+	*-- Check if the current folder is a repository.
+	lcRepoType = This.GetRepoType( m.lcFolderPath )
+	IF EMPTY( m.lcRepoType )
 		*-- This folder is not a repository, so check if the parent
 		*-- folder is.  Note that although subfolders can be omitted
 		*-- from a repository, it will generally be safe to assume that
 		*-- any folder that is in the project will be managed by the
 		*-- repository of a parent folder.
 		lcFolderPath = LEFT( m.lcFolderPath, RAT( "\", m.lcFolderPath, 2 ) )
+	ELSE
+		*-- The current folder is a repository.  Store the folder and
+		*-- and the repository type.
+		lcRepoFolder = ALLTRIM( m.lcFolderPath )
+		tcRepoType = m.lcRepoType
+		EXIT
 	ENDIF
 ENDDO
 
@@ -1057,6 +1218,8 @@ LOCAL llSuccess, ;
 	lcSQL, ;
 	lcFolderPath, ;
 	lcRepoFolder, ;
+	lcRepoType, ;
+	lcCommand, ;
 	lcBranchName, ;
 	loRepoStatistics
 
@@ -1080,11 +1243,14 @@ lcProjectFoldersAlias = JUSTSTEM( m.lcProjectName ) + "_Folders" + SYS(2015)
 
 *-- Generate the query to retrieve all the data paths represented in
 *-- the specified project.
+*-- MJP -- 06/24/2016 04:54:16 PM
+*-- Add a field for the repository type.
 TEXT TO m.lcSQL TEXTMERGE NOSHOW
 	SELECT DISTINCT ;
 			CAST( ADDBS( JUSTPATH( FULLPATH( Name, "<<m.lcProjectName>>" ) ) ) AS V(254) ) ;
 				AS PF_FolderPath, ;
-			CAST( SPACE(0) AS V(254) ) AS PF_GitRepository ;
+			CAST( SPACE(0) AS V(254) ) AS PF_RepositoryFolder, ;
+			CAST( SPACE(0) AS C(1) ) AS PF_RepositoryType ;
 		FROM <<m.lcProjectAlias>> ;
 		WHERE NOT Type = "H" ;
 		INTO CURSOR <<m.lcProjectFoldersAlias>> READWRITE
@@ -1131,7 +1297,7 @@ IF m.llSuccess
 		*!* 	IF DIRECTORY( m.lcFolderPath + ".Git", 1 )
 		*!* 		*-- The current folder contains the .Git folder (which
 		*!* 		*-- is normally hidden), so this must be a Git repository.
-		*!* 		REPLACE PF_GitRepository WITH ALLTRIM( m.lcFolderPath ) ;
+		*!* 		REPLACE PF_RepositoryFolder WITH ALLTRIM( m.lcFolderPath ) ;
 		*!* 				IN ( m.lcProjectFoldersAlias )
 		*!* 		EXIT
 		*!* 	ELSE
@@ -1147,9 +1313,10 @@ IF m.llSuccess
 
 		*-- Check if a repository exists in this folder, or one of its
 		*-- parent folders.  If so, save it.
-		lcRepoFolder = This.GetRepoFolderForPath( @m.toErrorInfo, m.lcFolderPath )
+		lcRepoFolder = This.GetRepoFolderForPath( @m.toErrorInfo, m.lcFolderPath, @m.lcRepoType )
 		IF NOT EMPTY( m.lcRepoFolder )
-			REPLACE PF_GitRepository WITH ALLTRIM( m.lcRepoFolder ) ;
+			REPLACE PF_RepositoryFolder WITH ALLTRIM( m.lcRepoFolder ), ;
+					PF_RepositoryType WITH m.lcRepoType ;
 					IN ( m.lcProjectFoldersAlias )
 		ENDIF
 		*!* *} MJP -- 06/20/2016 16:04:00 - End
@@ -1164,14 +1331,18 @@ IF m.llSuccess
 	*-- Add fields to store some statistics about each repository,
 	*-- making this cursor a little more useful for getting an overview
 	*-- of the status of the project.
-	SELECT DISTINCT PF_GitRepository, ;
-			CAST( SPACE(0) AS V(254) ) AS PF_GitCurrentBranch, ;
+	*-- MJP -- 06/24/2016 04:57:05 PM
+	*-- Include the repository type in the results, and we can check
+	*-- if that has a value, rather than the folder field.
+	SELECT DISTINCT PF_RepositoryFolder, ;
+			PF_RepositoryType, ;
+			CAST( SPACE(0) AS V(254) ) AS PF_CurrentBranch, ;
 			CAST( .NULL. AS I ) AS PF_StagedChanges, ;
 			CAST( .NULL. AS I ) AS PF_UnstagedChanges, ;
 			CAST( .NULL. AS I ) AS PF_MergeConflicts, ;
 			CAST( .NULL. AS I ) AS PF_UntrackedItems ;
 		FROM ( m.lcProjectFoldersAlias ) ;
-		WHERE NOT EMPTY( PF_GitRepository ) ;
+		WHERE NOT EMPTY( PF_RepositoryType ) ;
 		INTO CURSOR ( m.tcCursorName ) READWRITE
 
 	*{ MJP -- 04/29/2015 05:21:57 PM - Begin
@@ -1181,13 +1352,21 @@ IF m.llSuccess
 		SELECT ( m.tcCursorName )
 		GO TOP
 		SCAN
-			*-- This command retrieves the name of the current branch,
+			*{ MJP -- 06/24/2016 05:30:58 PM - Begin
+			*-- Determine the command needed to retrieve the name of
+			*-- the current branch in the repository.
+			*-- The Git command retrieves the name of the current branch,
 			*-- as long as you're not in a detached HEAD state, otherwise
 			*-- you just get "HEAD", which will at least be a clue that
 			*-- something probably needs to be done with that repo.
-			IF This.ExecuteCommand( .NULL., PF_GitRepository, "git rev-parse --abbrev-ref HEAD", ;
-					@m.lcBranchName )
-				REPLACE PF_GitCurrentBranch WITH RTRIM( m.lcBranchName ) ;
+			lcCommand = IIF( EVALUATE( m.tcCursorName + ".PF_RepositoryType" ) = "M", ;
+					"hg branch", "git rev-parse --abbrev-ref HEAD" )
+
+			*!* IF This.ExecuteCommand( .NULL., PF_RepositoryFolder, "git rev-parse --abbrev-ref HEAD", ;
+			*!* 		@m.lcBranchName )
+			IF This.ExecuteCommand( .NULL., PF_RepositoryFolder, m.lcCommand, @m.lcBranchName )
+			*} MJP -- 06/24/2016 05:30:58 PM - End
+				REPLACE PF_CurrentBranch WITH RTRIM( m.lcBranchName ) ;
 						IN ( m.tcCursorName )
 			ENDIF
 
@@ -1197,7 +1376,7 @@ IF m.llSuccess
 			*-- default value of NULL to indicate that the information
 			*-- could not be retrieved.  We won't abort this method if
 			*-- the stats can't be retrieved, though.
-			loRepoStatistics = This.GetRepoStatistics( .NULL., PF_GitRepository )
+			loRepoStatistics = This.GetRepoStatistics( .NULL., PF_RepositoryFolder )
 			IF NOT ISNULL( m.loRepoStatistics )
 				REPLACE PF_StagedChanges WITH m.loRepoStatistics.StagedChanges, ;
 						PF_UnstagedChanges WITH m.loRepoStatistics.UnstagedChanges, ;
@@ -1424,6 +1603,7 @@ LOCAL lcDefaultPath, ;
 	lcMainFileName, ;
 	lcMessage, ;
 	lcRelativeFileName, ;
+	lcRepoType, ;
 	lcRepository, ;
 	lcStatusAlias, ;
 	lcTextFileName, ;
@@ -1449,6 +1629,12 @@ IF m.llSuccess
 	lcRepository = This.GetRepositoryPath( m.tcRepository )
 	lcMessage = "Cleaning up Binary files for Repository:" + CHR(13) + m.lcRepository + CHR(13)
 
+	*{ MJP -- 06/25/2016 03:56:02 PM - Begin
+	*-- Get the type of repository, which is needed to generate the
+	*-- appropriate command to undo file changes.
+	lcRepoType = This.GetRepoType( m.lcRepository )
+	*} MJP -- 06/25/2016 03:56:02 PM - End
+
 	*-- Scan the cleanup list to confirm whether changes should be
 	*-- undone for any of the files.
 	SELECT ( m.tcFileListAlias )
@@ -1470,7 +1656,13 @@ IF m.llSuccess
 
 		*-- Check if the file is already staged for commit, in which
 		*-- case 2 steps are required to undo the changes.
-		llStaged = ( EVALUATE( m.lcStatusAlias + ".GS_IndexStatus" ) = "M" )
+		*-- MJP -- 06/25/2016 04:01:35 PM
+		*-- We only need the staged flag for a Git repository.
+		IF m.lcRepoType = "G"
+			llStaged = ( EVALUATE( m.lcStatusAlias + ".GS_IndexStatus" ) = "M" )
+		ELSE
+			llStaged = .F.
+		ENDIF
 
 		*-- The name of the main binary file is needed to retrieve the
 		*-- name of the corresponding text file.
@@ -1503,11 +1695,27 @@ IF m.llSuccess
 			llSuccess = This.ExecCommandVFPBinary( @m.toErrorInfo, "git reset", m.lcRelativeFileName )
 		ENDIF
 
-		*-- Checkout the last version of the file for the most recent
-		*-- commit in the current working tree.
-		IF m.llSuccess
-			llSuccess = This.ExecCommandVFPBinary( @m.toErrorInfo, "git checkout", m.lcRelativeFileName )
-		ENDIF
+		*!* *{ MJP -- 06/25/2016 16:03:47 - Begin
+		*!* *-- Checkout the last version of the file for the most recent
+		*!* *-- commit in the current working tree.
+		*!* IF m.llSuccess
+		*!* 	llSuccess = This.ExecCommandVFPBinary( @m.toErrorInfo, "git checkout", m.lcRelativeFileName )
+		*!* ENDIF
+		DO CASE
+			CASE NOT m.llSuccess
+				*-- Something already failed.
+
+			CASE m.lcRepoType = "M"
+				*-- In Mercurial, revert the change on the current
+				*-- revision, and don't create a backup (.orig) file.
+				llSuccess = This.ExecCommandVFPBinary( @m.toErrorInfo, "hg revert -C", m.lcRelativeFileName )
+
+			OTHERWISE
+				*-- In Git, checkout the last version of the file for
+				*-- the most recent commit in the current working tree.
+				llSuccess = This.ExecCommandVFPBinary( @m.toErrorInfo, "git checkout", m.lcRelativeFileName )
+		ENDCASE
+		*!* *} MJP -- 06/25/2016 16:03:47 - End
 	ENDSCAN
 
 	*-- If timestamps are being saved, restore the modification dates
@@ -1520,7 +1728,7 @@ IF m.llSuccess
 			*-- nothing to do.
 
 		*-- MJP -- 05/11/2015 05:07:05 PM
-		CASE NOT FILE( ADDBS( m.lcRepository ) + This.GetTimestampFileName() )
+		CASE NOT FILE( ADDBS( m.lcRepository ) + This.GetTimestampFileName( .NULL., m.lcRepository ) )
 			*-- Timestamps are being preserved, but there is no file
 			*-- yet, so nothing to restore.
 
@@ -1600,7 +1808,7 @@ ENDCASE
 SELECT ( m.lcRepoListAlias )
 GO TOP
 SCAN
-	IF NOT This.BinaryToTextRepo( @m.toErrorInfo, PF_GitRepository, m.tlCleanupModified )
+	IF NOT This.BinaryToTextRepo( @m.toErrorInfo, PF_RepositoryFolder, m.tlCleanupModified )
 		llSuccess = .F.
 		EXIT
 	ENDIF
@@ -1612,7 +1820,7 @@ RETURN m.llSuccess
 ENDFUNC
 
 *********************************************************************
-FUNCTION BinaryToTextProjectFilesInRepo
+PROTECTED FUNCTION BinaryToTextProjectFilesInRepo
 
 *!*	If there are .PJX files that are not being tracked in the specified repository, but there are
 *!*	text files for those .PJX files (typically with a .PJ2 extension) that ARE being tracked, then
@@ -1829,7 +2037,7 @@ llSuccess = .T.
 
 lcRepository = This.GetRepositoryPath( m.tcRepository )
 
-lcFullFileName = ADDBS( m.lcRepository ) + This.GetTimestampFileName( m.tcFileName )
+lcFullFileName = ADDBS( m.lcRepository ) + This.GetTimestampFileName( m.tcFileName, m.lcRepository )
 
 TRY
 	*-- Attempt to read the contents of the file.
@@ -1958,7 +2166,7 @@ LOCAL laFileDateList[1], ;
 lcRepository = This.GetRepositoryPath( m.tcRepository )
 
 *-- Make sure a file name is specified.
-lcTimestampFileName = This.GetTimestampFileName( m.tcFileName )
+lcTimestampFileName = This.GetTimestampFileName( m.tcFileName, m.lcRepository )
 
 lcFullFileName = ADDBS( m.lcRepository ) + m.lcTimestampFileName
 
@@ -2050,11 +2258,12 @@ IF m.llSuccess ;
 	*-- Before saving this list, check if it includes any files that
 	*-- we don't want to track, and need to be removed from the list.
 	*-- For now, don't track the timestamp file itself, or Git's ignore
-	*-- file, or our alternate text mapping file.
-	DIMENSION laFilesToIgnore[3]
+	*-- file, or our alternate text mapping files.
+	DIMENSION laFilesToIgnore[4]
 	laFilesToIgnore[1] = m.lcTimestampFileName
 	laFilesToIgnore[2] = ".gitignore"
-	laFilesToIgnore[3] = This.icAlternateTextFilename
+	laFilesToIgnore[3] = This.icGitAlternateTextFilename
+	laFilesToIgnore[4] = This.icHgAlternateTextFilename
 
 	FOR xx = 1 TO ALEN( laFilesToIgnore )
 		lnRow = ASCAN( laFileDateList, laFilesToIgnore[m.xx], 1, -1, 1, 1+2+4+8 )
@@ -2150,7 +2359,7 @@ ENDCASE
 SELECT ( m.lcRepoListAlias )
 GO TOP
 SCAN
-	IF NOT This.SaveRepoTimestampFile( @m.toErrorInfo, PF_GitRepository )
+	IF NOT This.SaveRepoTimestampFile( @m.toErrorInfo, PF_RepositoryFolder )
 		llSuccess = .F.
 		EXIT
 	ENDIF
@@ -2350,7 +2559,7 @@ ENDCASE
 SELECT ( m.lcRepoListAlias )
 GO TOP
 SCAN
-	IF NOT This.RestoreRepoTimestamps( @m.toErrorInfo, PF_GitRepository )
+	IF NOT This.RestoreRepoTimestamps( @m.toErrorInfo, PF_RepositoryFolder )
 		llSuccess = .F.
 		EXIT
 	ENDIF
@@ -2418,11 +2627,18 @@ ENDIF
 SELECT ( m.lcRepoListAlias )
 GO TOP
 SCAN
+	*{ MJP -- 06/25/2016 04:39:31 PM - Begin
+	*-- For now, don't allow tagging Mercurial repositories.
+	IF PF_RepositoryType = "M"
+		LOOP
+	ENDIF
+	*} MJP -- 06/25/2016 04:39:31 PM - End
+
 	*-- Attempt to tag the current repository.  An unsigned annotated
 	*-- tag (-a) will be created, and if the tag already exists it will
 	*-- be replaced (-f).  If we decide to make these options configurable
 	*-- in the future, properties can be added to the class for that.
-	IF NOT This.ExecuteCommand( @m.toErrorInfo, PF_GitRepository, ;
+	IF NOT This.ExecuteCommand( @m.toErrorInfo, PF_RepositoryFolder, ;
 			"git tag -a -f " + m.tcTag + m.lcMessage )
 		llSuccess = .F.
 		EXIT
@@ -2482,9 +2698,16 @@ GO TOP
 SCAN
 	lcTagList = SPACE(0)
 
+	*{ MJP -- 06/25/2016 04:41:57 PM - Begin
+	*-- For now, don't allow untagging Mercurial repositories.
+	IF PF_RepositoryType = "M"
+		LOOP
+	ENDIF
+	*} MJP -- 06/25/2016 04:41:57 PM - End
+
 	*-- Attempt to lookup the specified tag in the current repository.
 	DO CASE
-		CASE NOT This.ExecuteCommand( @m.toErrorInfo, PF_GitRepository, ;
+		CASE NOT This.ExecuteCommand( @m.toErrorInfo, PF_RepositoryFolder, ;
 				'git tag -l "' + m.tcTag + '"', @m.lcTagList )
 			*-- The command failed, so abort.
 			llSuccess = .F.
@@ -2497,7 +2720,7 @@ SCAN
 			*-- a git error.
 			LOOP
 
-		CASE This.ExecuteCommand( @m.toErrorInfo, PF_GitRepository, "git tag -d " + m.tcTag )
+		CASE This.ExecuteCommand( @m.toErrorInfo, PF_RepositoryFolder, "git tag -d " + m.tcTag )
 			*-- The tag was successfully deleted.
 
 		OTHERWISE
@@ -2726,7 +2949,7 @@ ENDCASE
 SELECT ( m.lcRepoListAlias )
 GO TOP
 SCAN
-	IF NOT This.PostCheckoutProcessRepo( @m.toErrorInfo, PF_GitRepository )
+	IF NOT This.PostCheckoutProcessRepo( @m.toErrorInfo, PF_RepositoryFolder )
 		llSuccess = .F.
 		EXIT
 	ENDIF
@@ -3276,17 +3499,31 @@ PROTECTED FUNCTION GetTimestampFileName
 *!*		   tcFileName (O) -	A custom file name, either passed to the calling method or generated
 *!*							by the calling method.  If omitted, user settings are used to determine
 *!*							the file name to use.
+*!*		 tcRepository (O) -	The path of a repository.  If omitted, it is assumed that the default
+*!*							folder is the repository being used.
 
 *!*	RETURNS: Character
 *!*		The file name to use for storing timestamp data.
 *********************************************************************
-LPARAMETERS tcFileName AS String
+LPARAMETERS tcFileName AS String, tcRepository AS String
 
-LOCAL lcFileName
+LOCAL lcFileName, ;
+	lcRepoType
 
 *-- Check the file name, and use the default if nothing was specified.
-lcFileName = IIF( VARTYPE( m.tcFileName ) = "C" AND NOT EMPTY( m.tcFileName ), ;
-		ALLTRIM( m.tcFileName ), This.icTimestampFilename )
+*!* *{ MJP -- 06/24/2016 15:27:42 - Begin
+*!* lcFileName = IIF( VARTYPE( m.tcFileName ) = "C" AND NOT EMPTY( m.tcFileName ), ;
+*!* 		ALLTRIM( m.tcFileName ), This.icGitTimestampFilename )
+IF VARTYPE( m.tcFileName ) = "C" ;
+		AND NOT EMPTY( m.tcFileName )
+	lcFileName = ALLTRIM( m.tcFileName )
+ELSE
+	*-- A file name was not specified, so determine the type of repository
+	*-- being processed, and get the corresponding file name.
+	lcRepoType = This.GetRepoType( m.tcRepository )
+	lcFileName = IIF( m.lcRepoType = "M", This.icHgTimestampFilename, This.icGitTimestampFilename )
+ENDIF
+*!* *} MJP -- 06/24/2016 15:27:42 - End
 
 *-- Make sure the name does not include any path info.
 lcFileName = JUSTFNAME( m.lcFileName )
@@ -3324,7 +3561,7 @@ DO CASE
 		*-- Timestamps are only to be saved if the timestamp file exists,
 		*-- so lookup the name and make sure it exists in this repository.
 		lcFileName = ADDBS( This.GetRepositoryPath( m.tcRepository ) ) ;
-				+ This.GetTimestampFileName( m.tcFileName )
+				+ This.GetTimestampFileName( m.tcFileName, m.tcRepository )
 
 		llSaveTimestamps = FILE( m.lcFileName )
 
@@ -3901,9 +4138,11 @@ PROTECTED FUNCTION AddUntrackedFilesToRepo
 LPARAMETERS toErrorInfo AS Exception, tcRepository AS String
 
 LOCAL laOtherExt[1], ;
+	lcAddCommand, ;
 	lcErrorMessage, ;
 	lcFileToAdd, ;
 	lcMainExtension, ;
+	lcRepoType, ;
 	lcStatusAlias, ;
 	lcTextExtension, ;
 	lcTrackedBinAlias, ;
@@ -3971,6 +4210,13 @@ TRY
 
 	lcErrorMessage = SPACE(0)
 
+	*{ MJP -- 06/24/2016 03:02:07 PM - Begin
+	*-- Determine the type of repository being processed, and set the
+	*-- corresponding add command to use.
+	lcRepoType = This.GetRepoType( m.tcRepository )
+	lcAddCommand = IIF( m.lcRepoType = "M", "hg add", "git add" )
+	*} MJP -- 06/24/2016 03:02:07 PM - End
+
 	*-- Check all the primary files that are being tracked.
 	SELECT ( m.lcTrackedBinAlias )
 	GO TOP
@@ -4025,8 +4271,12 @@ TRY
 				loErrorInfo = .NULL.
 				*-- This file belongs with a main file that is being
 				*-- tracked, so attempt to add it.
-				IF NOT This.ExecuteCommand( @m.loErrorInfo, m.tcRepository, "git add " ;
+				*!* *{ MJP -- 06/24/2016 15:06:12 - Begin
+				*!* IF NOT This.ExecuteCommand( @m.loErrorInfo, m.tcRepository, "git add " ;
+				*!* 		+ EVALUATE( m.lcUntrackedAlias + ".GS_FileName" ) )
+				IF NOT This.ExecuteCommand( @m.loErrorInfo, m.tcRepository, m.lcAddCommand + SPACE(1) ;
 						+ EVALUATE( m.lcUntrackedAlias + ".GS_FileName" ) )
+				*!* *} MJP -- 06/24/2016 15:06:12 - End
 					*-- When an add fails, log the error, but continue
 					*-- processing so we add as many files as possible.
 					lcErrorMessage = m.lcErrorMessage + "Unable to add '" ;
@@ -4273,6 +4523,7 @@ LPARAMETERS tcRepository AS String
 
 LOCAL laAlternateTextRaw[1], ;
 	lcAlternateTextFilename, ;
+	lcRepoType, ;
 	lcRepository, ;
 	lnLineCount, ;
 	lnRows, ;
@@ -4295,7 +4546,13 @@ This.iaAlternateText[1,1] = m.lcRepository
 This.iaAlternateText[1,2] = .NULL.
 
 *-- Look for the mapping file.  If it doesn't exist, we're done.
-lcAlternateTextFilename = m.lcRepository + This.icAlternateTextFilename
+*!* *{ MJP -- 06/25/2016 13:59:56 - Begin
+*!* lcAlternateTextFilename = m.lcRepository + This.icGitAlternateTextFilename
+*-- The mapping file name depends on the type of repository.
+lcRepoType = This.GetRepoType( m.lcRepository )
+lcAlternateTextFilename = m.lcRepository + IIF( m.lcRepoType = "M", ;
+		This.icHgAlternateTextFilename, This.icGitAlternateTextFilename )
+*!* *} MJP -- 06/25/2016 13:59:56 - End
 IF NOT FILE( m.lcAlternateTextFilename )
 	RETURN
 ENDIF
@@ -4430,8 +4687,8 @@ ENDFUNC
 *********************************************************************
 PROTECTED FUNCTION ExecCommandVFPBinary
 
-*!*	This method attempts to execute a Git command for the specified VFP binary file.  Since VFP
-*!*	binaries are composed of 2 or 3 files, this method attempts to execute the command for all
+*!*	This method attempts to execute a Git or Hg command for the specified VFP binary file.  Since
+*!* VFP	binaries are composed of 2 or 3 files, this method attempts to execute the command for all
 *!*	the companion files of the "main" binary file as well.
 
 *!*	NOTES:
@@ -4442,12 +4699,14 @@ PROTECTED FUNCTION ExecCommandVFPBinary
 *!*		  toErrorInfo (O) -	A variable passed by reference to store any error info returned from
 *!*							this method.  This will be returned as an Exception object.  This
 *!*							parameter is not required, but recommended.
-*!*			tcCommand (R) -	The Git command to execute.  This expected to be a command that works
-*!*							with individual files AND file masks, such as:
+*!*			tcCommand (R) -	The Git or Hg command to execute.  This is expected to be a command that
+*!*							works with individual files AND file masks, such as:
 *!*								git reset
 *!*								git checkout
 *!*								git clean
 *!*								git add
+*!*								hg revert
+*!*								hg add
 *!*		   tcFileName (R) -	The name of the main VFP binary file that the command is to be applied
 *!*							to.  The command will be applied to the companion files also.
 *!*							Note that a) the case of the file name is assumed to be the same as
@@ -4461,7 +4720,9 @@ PROTECTED FUNCTION ExecCommandVFPBinary
 *********************************************************************
 LPARAMETERS toErrorInfo AS Exception, tcCommand AS String, tcFileName AS String
 
-LOCAL lcExtensionExpr, ;
+LOCAL lcBeginDelim, ;
+	lcEndDelim, ;
+	lcExtensionExpr, ;
 	lcMainExtension, ;
 	llSuccess
 
@@ -4473,6 +4734,19 @@ tcFileName = ALLTRIM( m.tcFileName )
 *-- which will allow us to call this method for the "companion" files
 *-- as well as the main file.
 lcMainExtension = This.GetMainBinaryExtension( JUSTEXT( m.tcFileName ) )
+
+*{ MJP -- 06/25/2016 03:40:28 PM - Begin
+IF LOWER( GETWORDNUM( m.tcCommand, 1 ) ) = "git"
+	*-- For Git commands, the file mask needs to be surrounded by quotes
+	*-- and preceeded with a double-dash.
+	lcBeginDelim = ' -- "'
+	lcEndDelim = '"'
+ELSE
+	*-- In Mercurial, file masks don't need any special delimiters.
+	lcBeginDelim = SPACE(1)
+	lcEndDelim = SPACE(0)
+ENDIF
+*} MJP -- 06/25/2016 03:40:28 PM - End
 
 DO CASE
 	CASE ( "|" + m.lcMainExtension + "|" ) $ "|VCX|SCX|FRX|LBX|MNX|PJX|"
@@ -4492,19 +4766,19 @@ DO CASE
 				+ "[" + UPPER( SUBSTR( m.lcMainExtension, 2, 1 ) ) ;
 				+ LOWER( SUBSTR( m.lcMainExtension, 2, 1 ) ) + "][TtXx]"
 
-		llSuccess = This.ExecuteCommand( @m.toErrorInfo, .NULL., m.tcCommand + ' -- "' ;
-				+ LEFT( m.tcFileName, LENC( m.tcFileName ) - 3 ) + m.lcExtensionExpr + '"' )
+		llSuccess = This.ExecuteCommand( @m.toErrorInfo, .NULL., m.tcCommand + m.lcBeginDelim ;
+				+ LEFT( m.tcFileName, LENC( m.tcFileName ) - 3 ) + m.lcExtensionExpr + m.lcEndDelim )
 		*!* *} MJP -- 06/04/2015 08:38:38 - End
 
 	CASE m.lcMainExtension = "DBC"
 		*-- The .DBC is a set of 3 files with a little different naming
 		*-- convention.  Explicitly specify the extension for all of
 		*-- the files, in case it wasn't the .DBC itself that was passed.
-		llSuccess = This.ExecuteCommand( @m.toErrorInfo, .NULL., m.tcCommand + ' -- "' ;
-				+ LEFT( m.tcFileName, LENC( m.tcFileName ) - 3 ) + '[Dd][Bb][Cc]"' )
+		llSuccess = This.ExecuteCommand( @m.toErrorInfo, .NULL., m.tcCommand + m.lcBeginDelim ;
+				+ LEFT( m.tcFileName, LENC( m.tcFileName ) - 3 ) + '[Dd][Bb][Cc]' + m.lcEndDelim )
 		IF m.llSuccess
-			llSuccess = This.ExecuteCommand( @m.toErrorInfo, .NULL., m.tcCommand + ' -- "' ;
-					+ LEFT( m.tcFileName, LENC( m.tcFileName ) - 3 ) + '[Dd][Cc][TtXx]"' )
+			llSuccess = This.ExecuteCommand( @m.toErrorInfo, .NULL., m.tcCommand + m.lcBeginDelim ;
+					+ LEFT( m.tcFileName, LENC( m.tcFileName ) - 3 ) + '[Dd][Cc][TtXx]' + m.lcEndDelim )
 		ENDIF
 
 	CASE m.lcMainExtension = "DBF"
@@ -4535,8 +4809,8 @@ LOCAL lcAlias, ;
 
 lcRepository = "C:\Work\VFP\Shared\Lib"
 
-lcRepository = GETDIR( m.lcRepository, "Select a Git repository to check its status", ;
-		"Select Git Repository", 1+64+512 )
+lcRepository = GETDIR( m.lcRepository, "Select a Git/Hg repository to check its status", ;
+		"Select Git/Hg Repository", 1+64+512 )
 IF EMPTY( m.lcRepository )
 	RETURN
 ENDIF
@@ -4648,8 +4922,10 @@ DEFINE CLASS ccEditClassName AS Container
 		loRenderEngine = EXECSCRIPT( _Screen.cThorDispatcher, "Class= OptionRenderEngine" )
 
 		TEXT TO loRenderEngine.cBodyMarkup NOSHOW TEXTMERGE
+			.lLabelsAbove = .F.
+			|
 			.Class = "Label"
-			.Caption = "Should file modification dates be saved/restored for all files in Git repositories?  (This setting is ignored when explicitly saving or restoring file timestamps using the corresponding tools.)"
+			.Caption = "Should file modification dates be saved/restored for all files in Git or Mercurial repositories?  (This setting is ignored when explicitly saving or restoring file timestamps using the corresponding tools.)"
 			.Width = 350
 			.Left = 25
 			.WordWrap = .T.
@@ -4661,16 +4937,36 @@ DEFINE CLASS ccEditClassName AS Container
 			.cKey = ccKeyPreserveTimestamps
 			|
 			.Class = "Label"
-			.Caption = "Enter the name of the file where the file modification timestamps will be saved.  The file is created in the repository root, so do not include a path."
+			.Caption = "Enter the names of the files where the file modification timestamps will be saved.  The file is created in the repository root, so do not include a path."
 			.Width = 350
 			.Left = 25
 			.WordWrap = .T.
 			|
+			.Class = "Label"
+			.Caption = "Git"
+			.Width = 80
+			.Left = 25
+			.Alignment = 1
+			|
 			.Class = "Textbox"
 			.Width = 150
-			.Left = 50
+			.Left = 110
+			.row-increment = 0
 			.cTool = ccToolName
-			.cKey = ccKeyTimestampFileName
+			.cKey = ccKeyGitTimestampFileName
+			|
+			.Class = "Label"
+			.Caption = "Mercurial"
+			.Width = 80
+			.Left = 25
+			.Alignment = 1
+			|
+			.Class = "Textbox"
+			.Width = 150
+			.Left = 110
+			.row-increment = 0
+			.cTool = ccToolName
+			.cKey = ccKeyHgTimestampFileName
 		ENDTEXT
 
 		loRenderEngine.Render( This, ccToolName )

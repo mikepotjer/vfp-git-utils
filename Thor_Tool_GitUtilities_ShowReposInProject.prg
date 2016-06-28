@@ -1,6 +1,6 @@
 LPARAMETERS lxParam1
 
-#DEFINE TOOL_PROMPT		"Show Git repos in project"
+#DEFINE TOOL_PROMPT		"Show Git/Hg repos in project"
 
 ****************************************************************
 ****************************************************************
@@ -15,24 +15,24 @@ IF PCOUNT() = 1 ;
 
 		* Required
 		.Prompt		   = TOOL_PROMPT && used when tool appears in a menu
-		.Summary       = 'Display a cursor of all the Git repositories in a VFP project'
+		.Summary       = 'Display a cursor of all the Git or Mercurial repositories in a VFP project'
 
 		* Optional
 		Text to .Description NoShow && a description for the tool
-Populates a cursor with a list of all the Git repositories containing files from the selected project, and the branch currently checked out for each repo.  Prompts for a project if no project is open, otherwise processes the active project.
+Populates a cursor with a list of all the Git or Mercurial repositories containing files from the selected project, and the branch currently checked out for each repo.  Prompts for a project if no project is open, otherwise processes the active project.
 
-This tool requires Git for Windows and some Thor Repository tools.
+This tool requires Git for Windows or Mercurial for Windows and some Thor Repository tools.
 		EndText 
 		.StatusBarText = .Summary
 		.CanRunAtStartUp = .F.
 
 		* These are used to group and sort tools when they are displayed in menus or the Thor form
 		.Source		   = 'MJP' && where did this tool come from?  Your own initials, for instance
-		.Category      = 'Applications|Git Utilities' && allows categorization for tools with the same source
+		.Category      = 'Applications|Git/Hg Utilities' && allows categorization for tools with the same source
 		.Sort		   = 0 && the sort order for all items from the same Source, Category and Sub-Category
 
 		* For public tools, such as PEM Editor, etc.
-		.Version	   = '2015.05.12' && e.g., 'Version 7, May 18, 2011'
+		.Version	   = '2016.06.24' && e.g., 'Version 7, May 18, 2011'
 		.Author        = 'Mike Potjer'
 		*!* .Link          = 'https://github.com/mikepotjer/vfp-git-utils'	&& 'http://www.optimalinternet.com/' && link to a page for this tool
 		.Link          = 'https://bitbucket.org/mikepotjer/vfp-git-utils'	&& 'http://www.optimalinternet.com/' && link to a page for this tool
