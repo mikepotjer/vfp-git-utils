@@ -8,7 +8,7 @@ WITH toUpdateInfo
     .Component       = 'No'
     .ToolName        = 'Thor_Tool_ThorInternalRepository'
     .VersionNumber   = 'v2016.06.25.beta'
-    .VersionDate     = DATE(2015, 6, 25)
+    .VersionDate     = DATE(2016, 6, 25)
     .SourceFileUrl   = 'https://bitbucket.org/mikepotjer/vfp-git-utils/downloads/GitUtils-Beta.zip'
     .LinkPrompt      = 'Git/Hg Utilities for VFP Home Page'
     .Link            = 'https://bitbucket.org/mikepotjer/vfp-git-utils'
