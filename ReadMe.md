@@ -39,12 +39,16 @@ for getting started with Git.  This guide includes:
 
 ### Installation ###
 
+#### Release ####
+
 The Git Utilities are included in Thor's **Check for Updates**.  When installed, these tools will
 appear in the Thor tools menus under `Applications > Git Utilities`.  
 
 **NOTE:** If you previously installed Git Utilities in the `My Tools` folder, you need to delete all
 `Thor_Proc_GitUtilities.*` and `Thor_Tool_GitUtilities_*.*` files from that folder.  If you don't,
 the files in `My Tools` will be used instead of the files coming from _Check for Updates_.  
+
+#### Beta ####
 
 Occasionally I may make new features available via a beta version of Git Utilities before releasing
 them in the regular version.  If you would like to try the beta version, you can manually add it to
