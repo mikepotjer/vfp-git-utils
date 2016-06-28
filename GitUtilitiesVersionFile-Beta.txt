@@ -4,7 +4,7 @@ LOCAL lcNote, ;
 	lcRegisterWithThor
 
 WITH toUpdateInfo
-    .ApplicationName = 'Git/Hg Utilities (Beta)'
+    .ApplicationName = 'Git and Hg Utilities (Beta)'
     .Component       = 'No'
     .ToolName        = 'Thor_Tool_ThorInternalRepository'
     .VersionNumber   = 'v2016.06.25.beta'
@@ -15,14 +15,14 @@ WITH toUpdateInfo
 ENDWITH
 
 TEXT TO lcRegisterWithThor NOSHOW TEXTMERGE
-    MESSAGEBOX('From the Thor Launcher, see "Applications -> Git/Hg Utilities"' + CHR(13) ;
-        + SPACE(5) + 'and "Applications -> FoxBin2Prg"', 0 ,"Git/Hg Utilities installed", 5000)
+    MESSAGEBOX('From the Thor Launcher, see "Applications -> Git-Hg Utilities"' + CHR(13) ;
+        + SPACE(5) + 'and "Applications -> FoxBin2Prg"', 0 ,"Git-Hg Utilities installed", 5000)
 ENDTEXT
 
 ADDPROPERTY( toUpdateInfo, 'RegisterWithThor', lcRegisterWithThor )
 
 TEXT TO lcNote NOSHOW
-The Git/Hg Utilities ease the process of working with VFP's binary files when using Git or Mercurial as the source control provider, as well as making it easier to work with .PJX projects which contain files from multiple Git or Mercurial repositories.  See the tool home page for more information.
+The Git-Hg Utilities ease the process of working with VFP's binary files when using Git or Mercurial as the source control provider, as well as making it easier to work with .PJX projects which contain files from multiple Git or Mercurial repositories.  See the tool home page for more information.
 
 These utilities require the Thor repository, FoxBin2Prg, Git for Windows or Mercurial for Windows, and the Windows Scripting Host.
 

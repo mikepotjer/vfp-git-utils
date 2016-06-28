@@ -1,6 +1,6 @@
 LPARAMETERS lxParam1
 
-#DEFINE TOOL_PROMPT		"Show Git/Hg repos in project"
+#DEFINE TOOL_PROMPT		"Show Git-Hg repos in project"
 
 ****************************************************************
 ****************************************************************
@@ -28,7 +28,7 @@ This tool requires Git for Windows or Mercurial for Windows and some Thor Reposi
 
 		* These are used to group and sort tools when they are displayed in menus or the Thor form
 		.Source		   = 'MJP' && where did this tool come from?  Your own initials, for instance
-		.Category      = 'Applications|Git/Hg Utilities' && allows categorization for tools with the same source
+		.Category      = 'Applications|Git-Hg Utilities' && allows categorization for tools with the same source
 		.Sort		   = 0 && the sort order for all items from the same Source, Category and Sub-Category
 
 		* For public tools, such as PEM Editor, etc.
