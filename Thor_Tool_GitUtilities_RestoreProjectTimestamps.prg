@@ -16,31 +16,31 @@ IF PCOUNT() = 1 ;
 
 		* Required
 		.Prompt		   = TOOL_PROMPT && used when tool appears in a menu
-		.Summary       = 'Restore the timestamps of files committed to a Git repository'
+		.Summary       = 'Restore the timestamps of files committed to a Git or Mercurial repository'
 
 		* Optional
 		Text to .Description NoShow && a description for the tool
-Restores the modification date for all files in the Git repositories of the selected project or repository folder.  The modification dates for files that have changed since the most recent commit are NOT updated.
+Restores the modification date for all files in the Git or Mercurial repositories of the selected project or repository folder.  The modification dates for files that have changed since the most recent commit are NOT updated.
 
-This tool requires Git for Windows and some Thor Repository tools.
+This tool requires Git for Windows or Mercurial for Windows and some Thor Repository tools.
 		EndText
 		.StatusBarText = .Summary
 		.CanRunAtStartUp = .F.
 
 		* These are used to group and sort tools when they are displayed in menus or the Thor form
 		.Source		   = 'MJP' && where did this tool come from?  Your own initials, for instance
-		.Category      = 'Applications|Git Utilities' && allows categorization for tools with the same source
+		.Category      = 'Applications|Git-Hg Utilities' && allows categorization for tools with the same source
 		.Sort		   = 0 && the sort order for all items from the same Source, Category and Sub-Category
 
 		* For public tools, such as PEM Editor, etc.
-		.Version	   = '2015.07.09' && e.g., 'Version 7, May 18, 2011'
+		.Version	   = '2016.06.24' && e.g., 'Version 7, May 18, 2011'
 		.Author        = 'Mike Potjer'
 		*!* .Link          = 'https://github.com/mikepotjer/vfp-git-utils'	&& 'http://www.optimalinternet.com/' && link to a page for this tool
 		.Link          = 'https://bitbucket.org/mikepotjer/vfp-git-utils'	&& 'http://www.optimalinternet.com/' && link to a page for this tool
 		.VideoLink     = '' && link to a video for this tool
 
 		.OptionTool    = ccToolName
-		.OptionClasses = "clsTimestampFileName"
+		.OptionClasses = "clsGitTimestampFileName, clsHgTimestampFileName"
 	ENDWITH
 
 	RETURN m.lxParam1
@@ -120,9 +120,17 @@ ENDPROC
 *********************************************************************
 *-- Option classes
 *********************************************************************
-DEFINE CLASS clsTimestampFileName AS Custom
+DEFINE CLASS clsGitTimestampFileName AS Custom
 	Tool = ccToolName
-	Key = ccKeyTimestampFileName
-	Value = ccInitialValueTSFileName
+	Key = ccKeyGitTimestampFileName
+	Value = ccInitialValueGitTSFileName
+	EditClassName = [ccEditClassName of Thor_Proc_GitUtilities.PRG]
+ENDDEFINE
+
+*-- MJP -- 06/24/2016 04:24:39 PM
+DEFINE CLASS clsHgTimestampFileName AS Custom
+	Tool = ccToolName
+	Key = ccKeyHgTimestampFileName
+	Value = ccInitialValueHgTSFileName
 	EditClassName = [ccEditClassName of Thor_Proc_GitUtilities.PRG]
 ENDDEFINE

@@ -1,32 +1,56 @@
-Lparameters toUpdateInfo
+LPARAMETERS toUpdateInfo
 
-Local lcNote, ;
+LOCAL lcNote, ;
 	lcRegisterWithThor
 
-With toUpdateInfo
-    .ApplicationName = 'Git Utilities (Beta)'
+WITH toUpdateInfo
+    .ApplicationName = 'Git and Hg Utilities (Beta)'
     .Component       = 'No'
     .ToolName        = 'Thor_Tool_ThorInternalRepository'
-    .VersionNumber   = 'v2015.07.09.beta'
-    .VersionDate     = Date(2015, 7, 9)
+    .VersionNumber   = 'v2016.06.25.beta'
+    .VersionDate     = DATE(2016, 6, 25)
     .SourceFileUrl   = 'https://bitbucket.org/mikepotjer/vfp-git-utils/downloads/GitUtils-Beta.zip'
-    .LinkPrompt      = 'Git Utilities for VFP Home Page'
+    .LinkPrompt      = 'Git/Hg Utilities for VFP Home Page'
     .Link            = 'https://bitbucket.org/mikepotjer/vfp-git-utils'
-EndWith
+ENDWITH
 
-Text to lcRegisterWithThor NoShow TextMerge
-    Messagebox('From the Thor Launcher, see "Applications -> Git Utilities"', 0 ,"Git Utilities Beta installed", 4000)
-EndText
+TEXT TO lcRegisterWithThor NOSHOW TEXTMERGE
+    MESSAGEBOX('From the Thor Launcher, see "Applications -> Git-Hg Utilities"' + CHR(13) ;
+        + SPACE(5) + 'and "Applications -> FoxBin2Prg"', 0 ,"Git-Hg Utilities installed", 5000)
+ENDTEXT
 
 ADDPROPERTY( toUpdateInfo, 'RegisterWithThor', lcRegisterWithThor )
 
-Text to lcNote NoShow
-The Git Utilities ease the process of working with VFP's binary files when using Git as the source control provider, as well as making it easier to work with .PJX projects which contain files from multiple Git repositories.  See the tool home page for more information.
+TEXT TO lcNote NOSHOW
+The Git-Hg Utilities ease the process of working with VFP's binary files when using Git or Mercurial as the source control provider, as well as making it easier to work with .PJX projects which contain files from multiple Git or Mercurial repositories.  See the tool home page for more information.
 
-These utilities require the Thor repository, FoxBin2Prg, Git for Windows, and the Windows Scripting Host.
+These utilities require the Thor repository, FoxBin2Prg, Git for Windows or Mercurial for Windows, and the Windows Scripting Host.
 
 ==== Change History ====
-2015.07.09.beta
+2016.06.25.beta
+ - When the "Prepare for Git commit" process is run for a project file, make sure the text file is regenerated for the project file (.PJX), even if the project file and its text file are not being tracked by a repository.  The 2016.06.11 beta disabled this behavior, since the enhancement to project file processing only included project files that were being tracked.
+ - Enhance all the utilities to support Mercurial repositories, and added an option to specify a different file name for the timestamp file in a Mercurial repository.
+
+2016.06.11.beta
+ - Correct an issue where the modification date of a file that had just been edited could be reset to an earlier date during the "Prepare for Git commit" process.  This could occur if the timestamp file somehow ended up with duplicate entries for a file in the repository.  Duplicates are now removed when reading the file list from the timestamp file, and only the most recent timestamp is used for a duplicated file name.  This fix also removes the duplicates when the timestamp file is updated. (Thanks to Eddie Caldwell)
+ - Enhance the "Prepare for Git commit" process so that if there are multiple .PJ2 files being tracked in a repository (and the .PJX files are not being tracked), all of the .PJ2 files will be regenerated.  Before, you had to run "Prepare for Git commit" with a specific .PJX file, and then only the .PJ2 file for that .PJX was regenerated.
+
+2015.11.20
+ - Correct a bug that caused an error in the "Save file timestamps" tool when a file that was being tracked in the repository has been deleted, but the deletion is not staged yet. (Thanks to Eddie Caldwell)
+ - Correct a bug that caused an error in the "Restore file timestamps" tool when a file is referenced in the timestamp file, but is was deleted from the repository in a previous commit. (Thanks to Eddie Caldwell)
+
+2015.10.12
+ - When a new primary VFP binary file is added to a repository, the "Prepare for Git commit" process will now ensure that any untracked files that belong with it will be added to the repository.  For example, if a .SCX file is added, the .SCT and .SC2 files that go with it will be added for you.
+
+2015.10.09
+ - Modify the list of repositories in a project to include totals for staged and unstaged changes, untracked files, and merge conflicts.
+ - Add a tool which will create and populate a table from a FoxBin2Prg DB2 file created with the setting DBF_Conversion_Support: 4.
+ - Update the ReadMe file (shown on the tool homepage) to document the new features, and include additional information about the Prepare for Git Commit tool.
+
+2015.07.27
+ - Enhance the error handling for executing external commands to do a better job of collecting error info, eliminating a scenario where a blank error message was being generated.
+
+2015.07.24
  - Modify the recompile process for the post-checkout file synchronization to attempt to recompile all files in a repository, even after one of them fails to compile.
  - Update the error messaging for the recompile process to include the name of all the files that fail, and the name of the repository where the error occurs.
 
@@ -53,9 +77,9 @@ These utilities require the Thor repository, FoxBin2Prg, Git for Windows, and th
 
 2015.05.12
  - Initial public release of the Git Utilities.
-EndText
+ENDTEXT
 
-AddProperty(toUpdateInfo, 'Notes', lcNote)
+ADDPROPERTY( toUpdateInfo, 'Notes', lcNote )
 
-Execscript(_Screen.cThorDispatcher, 'Result=', toUpdateInfo)
-Return toUpdateInfo
+EXECSCRIPT( _Screen.cThorDispatcher, 'Result=', toUpdateInfo )
+RETURN toUpdateInfo
