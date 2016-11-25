@@ -199,6 +199,30 @@ icHgAlternateTextFilename = ".hgvfpalttext"
 DIMENSION iaAlternateText[1]
 iaAlternateText = .NULL.
 
+*{ MJP -- 11/26/2016 05:40:27 PM - Begin
+*-- When we are using the FoxBin2Prg progress bar for our own purpose,
+*-- these properties keep track of the last message displayed for each
+*-- progress bar.
+icProgressBar1LastMessage = ""
+icProgressBar2LastMessage = ""
+PROTECTED icProgressBar1LastMessage
+PROTECTED icProgressBar2LastMessage
+
+*-- These properties keep track of the total count that was specified
+*-- for each progress bar.
+inProgressBar1TotalCount = 0
+inProgressBar2TotalCount = 0
+PROTECTED inProgressBar1TotalCount
+PROTECTED inProgressBar2TotalCount
+
+*-- These properties keep track of the current item count for each
+*-- progress bar.
+inProgressBar1LastItem = 0
+inProgressBar2LastItem = 0
+PROTECTED inProgressBar1LastItem
+PROTECTED inProgressBar2LastItem
+*} MJP -- 11/26/2016 05:40:27 PM - End
+
 *********************************************************************
 PROCEDURE Init
 *********************************************************************
@@ -1266,6 +1290,12 @@ TRY
 
 CATCH TO toErrorInfo
 	llSuccess = .F.
+
+	*-- If the macro-expansion failed, copy the query we were trying
+	*-- to execute into the line contents.
+	IF LOWER( ALLTRIM( m.toErrorInfo.LineContents ) ) = "&lcsql."
+		toErrorInfo.LineContents = m.lcSQL
+	ENDIF
 ENDTRY
 
 IF m.llSuccess
@@ -2994,10 +3024,16 @@ USE IN SELECT( m.lcFileListAlias )
 laTimestampList = .NULL.
 *} MJP -- 08/27/2016 04:06:01 PM - End
 
-*-- Make sure all .PJX files are in synch with their corresponding
+*!* *{ MJP -- 11/26/2016 15:21:35 - Begin
+*!* *-- Make sure all .PJX files are in synch with their corresponding
+*!* *-- text file.
+*!* llSuccess = This.RegenerateRepoProjects( @m.toErrorInfo, m.tcRepository, @m.lcFileListAlias, ;
+*!* 		@m.laTimestampList )
+*-- Make sure all binary files are in synch with their corresponding
 *-- text file.
-llSuccess = This.RegenerateRepoProjects( @m.toErrorInfo, m.tcRepository, @m.lcFileListAlias, ;
+llSuccess = This.RegenerateRepoBinaries( @m.toErrorInfo, m.tcRepository, @m.lcFileListAlias, ;
 		@m.laTimestampList )
+*!* *} MJP -- 11/26/2016 15:21:35 - End
 
 *-- Make sure the program and object code files for all .MNX menu files
 *-- are updated.
@@ -3264,6 +3300,349 @@ FOR xx = 1 TO ALEN( laFileList, 1 )
 ENDFOR
 
 WAIT CLEAR
+
+RETURN m.llSuccess
+ENDFUNC
+
+*********************************************************************
+FUNCTION RegenerateRepoBinaries
+
+*!*	This method regenerates the VFP binary files for any corresponding text files committed to the
+*!*	specified Git/Hg repository.  If the binary files are not committed to a repository, this method
+*!*	ensures that those binary files are regenerated to match any text file versions which have been
+*!*	checked out.
+
+*!*	PARAMETERS:
+*!*			  toErrorInfo (O) -	A variable passed by reference to store any error info returned from
+*!*								this method.  This will be returned as an Exception object.  This
+*!*								parameter is not required, but recommended.
+*!*			 tcRepository (O) -	The full path to the repository folder where binary files are to be
+*!*								regenerated.  If omitted, the current folder will be used as the
+*!*								repository.
+*!*		  tcFileListAlias (O) -	The alias of the cursor containing a list of all the files in the
+*!*								specified repository.  If omitted or there is no cursor open with
+*!*								the specified name, the file list will be retrieved here, and the
+*!*								cursor name stored in this parameter.  The calling code can delegate
+*!*								the task of retrieving the list to this method by passing a variable
+*!*								to this parameter by reference, then it will have access to the
+*!*								cursor afterward.
+*!*		  taTimestampList (O) -	An array variable passed by reference, which is either already
+*!*								populated with timestamp data by This.ReadRepoTimestampFile(), or
+*!*								is to be populated with those values by this method.  If omitted,
+*!*								the timestamp array will still be populated by this method, if
+*!*								applicable.
+
+*!*	RETURNS: Logical
+*!*		.T. if all binary files are successfully regenerated, or if there are no binary files to
+*!*		regenerate, .F. if an error occurs.
+*********************************************************************
+LPARAMETERS toErrorInfo AS Exception, tcRepository AS String, tcFileListAlias AS String, taTimestampList
+
+LOCAL laBinaryFileList[1], ;
+	laFileTimestampInfo[1], ;
+	laTextFileList[1], ;
+	lcBinaryExtension, ;
+	lcFolder, ;
+	lcFullFileName, ;
+	lcJustFileName, ;
+	lcMessage, ;
+	lcRepository, ;
+	lcTextExtension, ;
+	lcTextExtensionsAlias, ;
+	lcVFPExtensionProcessingOrder, ;
+	llProjectOpen, ;
+	llSuccess, ;
+	llTimestampsMatch, ;
+	lnBinaryTypeCount, ;
+	lnFileCount, ;
+	lnFileType, ;
+	lnRow, ;
+	loBinaryFile AS SHELL.FolderItem, ;
+	loFolder AS SHELL.Folder, ;
+	loProject AS VisualFoxpro.IFoxProject, ;
+	loShell AS Shell.Shell, ;
+	ltFileTimestamp, ;
+	xx, ;
+	yy
+
+EXTERNAL ARRAY taTimestampList
+
+*-- Make sure we have a repository name.
+lcRepository = This.GetRepositoryPath( m.tcRepository )
+
+IF VARTYPE( m.tcFileListAlias ) = "C" ;
+		AND NOT EMPTY( m.tcFileListAlias ) ;
+		AND USED( m.tcFileListAlias )
+	*-- The specified cursor is already open, so use it.
+	llSuccess = .T.
+ELSE
+	*-- Attempt to retrieve the list of files committed to the specified
+	*-- repository.
+	llSuccess = This.FetchRepoFileList( @m.toErrorInfo, m.lcRepository, @m.tcFileListAlias )
+ENDIF
+
+*-- If something failed, or there are no files in this repository,
+*-- there's nothing to do here.
+IF NOT m.llSuccess ;
+		OR RECCOUNT( m.tcFileListAlias ) = 0
+	RETURN m.llSuccess
+ENDIF
+
+*-- Make sure the list of VFP binary extensions is populated.
+This.FetchVFPExtensionMapAlias()
+
+*-- Retrieve the list of text extensions and Bin2Prg settings for the
+*-- specified repository.
+lcTextExtensionsAlias = SPACE(0)
+IF NOT This.FetchTextExtensionList( @m.toErrorInfo, m.lcRepository, @m.lcTextExtensionsAlias )
+	RETURN .F.
+ENDIF
+
+*-- Make sure the timestamp list parameter is defined as an array.
+IF NOT TYPE( "taTimestampList", 1 ) = "A"
+	DIMENSION taTimestampList[1]
+	taTimestampList = .NULL.
+ENDIF
+
+*-- If no timestamp list was specified, and timestamps are preserved
+*-- by this repository, then attempt to get the timestamp list.
+IF ISNULL( taTimestampList[1] ) ;
+		AND This.AreTimestampsPreserved( m.lcRepository )
+	*-- Note that we will not abort if we can't get the timestamp list.
+	This.ReadRepoTimestampFile( @m.toErrorInfo, m.lcRepository, .NULL., @taTimestampList )
+ENDIF
+
+*-- If there are timestamps available, get a Windows shell object to
+*-- set the modification dates.
+IF NOT ISNULL( taTimestampList[1] )
+	loShell = CREATEOBJECT( "Shell.Application" )
+ENDIF
+
+This.LoadProgressBar()
+
+*-- Specify the list of binaries to process, in the order to process
+*-- them.  Note that VCX is first, in case there are SCX forms that
+*-- need to reference the classes in the VCX files.  PJX files are last,
+*-- so that any files they reference will exist.  The other files are
+*-- rather arbitrarily sorted.
+lcVFPExtensionProcessingOrder = "VCX,SCX,MNX,FRX,LBX,DBC,DBF,PJX"
+lnBinaryTypeCount = GETWORDCOUNT( m.lcVFPExtensionProcessingOrder, "," )
+
+*-- Process each type of binary file.
+FOR lnFileType = 1 TO m.lnBinaryTypeCount
+	lcBinaryExtension = GETWORDNUM( m.lcVFPExtensionProcessingOrder, m.lnFileType, "," )
+
+	*!* MJP -- Removed 11/26/2016 19:39:47
+	*-- If the progress bar is loaded when running FoxBin2Prg processes,
+	*-- FoxBin2Prg seems to take over the message displayed for the 1st
+	*-- progress bar, and takes over the 2nd progress bar completely.
+	*!* lcMessage = "Regenerating ." + m.lcBinaryExtension + " files for repository: " + m.lcRepository
+	*!* This.UpdateProgressBar( m.lcMessage, m.lnFileType, m.lnBinaryTypeCount, 1 )
+
+	*-- Determine the text extension used for binary files in the current
+	*-- repository.  Note that although each subfolder could use a
+	*-- different extension, we will assume you didn't do anything that
+	*-- crazy, and that the correct extension can be determined at the
+	*-- repository root level.  We will also assume that the repository
+	*-- root level specifies which text files will allow conversion to
+	*-- binary.
+	IF SEEK( m.lcBinaryExtension, m.lcTextExtensionsAlias, "TE_EXT" ) ;
+			AND EVALUATE( m.lcTextExtensionsAlias + ".TE_SupportsPrg2Bin" ) = .T.
+		lcTextExtension = EVALUATE( m.lcTextExtensionsAlias + ".TE_TextExtension" )
+	ELSE
+		*-- Either there is no text extension for this file type, or
+		*-- you aren't generating text files for it in this repository.
+		LOOP
+	ENDIF
+
+	*-- Retrieve a list of the text files generated for the binary files
+	*-- in this repository folder.
+	SELECT GL_FileName ;
+		FROM ( m.tcFileListAlias ) ;
+		WHERE UPPER( RTRIM( GL_FileExtension ) ) == m.lcTextExtension ;
+		INTO ARRAY laTextFileList
+
+	*-- There are no text files for binary files of this type that are
+	*-- committed to the repository, so skip to the next type.
+	lnFileCount = _TALLY
+	IF m.lnFileCount = 0
+		LOOP
+	ENDIF
+
+	DIMENSION laBinaryFileList[1]
+	laBinaryFileList = .NULL.
+
+	*-- Retrieve a list of any VFP binaries being tracked for the current
+	*-- binary file type.  This is needed to determine whether binaries
+	*-- should be generated for a particular file.
+	SELECT GL_FileName ;
+		FROM ( m.tcFileListAlias ) ;
+		WHERE UPPER( RTRIM( GL_FileExtension ) ) == m.lcBinaryExtension ;
+		INTO ARRAY laBinaryFileList
+
+	*-- Initialize an array that will be used to track timestamp info
+	*-- for the current file being processed.  The first column stores
+	*-- all of the extensions associated with the current file type.
+	*-- The second column will store the relative path and file name
+	*-- of the binary file.  The third column will store the Windows
+	*-- shell file object for the file, but since we can't define a
+	*-- column as an object data type, just cast it as string.
+	SELECT EM_Extension, ;
+			CAST( .NULL. AS V(120) ), ;
+			CAST( .NULL. AS C(1) ) ;
+		FROM ( This.icVFPBinaryExtensionMapAlias ) ;
+		WHERE EM_MainExtension = m.lcBinaryExtension ;
+		INTO ARRAY laFileTimestampInfo
+
+	*-- Regenerate all the binary files.
+	FOR xx = 1 TO m.lnFileCount
+		*-- FoxBin2Prg takes control of the progress bar when it's
+		*-- available, so the only thing we can really control is the
+		*-- progress displayed in the first bar.  We'll use that to
+		*-- give the user feedback on progress for the current file
+		*-- type.
+		lcMessage = "Regenerating file: " + laTextFileList[m.xx]
+		This.UpdateProgressBar( m.lcMessage, m.xx, m.lnFileCount, 1 )
+
+		*-- If a VFP binary file is being tracked for the current text
+		*-- file, then there is no need to regenerate binaries, so skip
+		*-- this file.
+		IF NOT ISNULL( laBinaryFileList[1] ) ;
+				AND ASCAN( laBinaryFileList, FORCEEXT( laTextFileList[m.xx], m.lcBinaryExtension ), ;
+					1, -1, 1, 1+2+4 ) > 0
+			LOOP
+		ENDIF
+
+		lcJustFileName = JUSTFNAME( laTextFileList[m.xx] )
+
+		*-- Set the relative path and file name for each of the binary
+		*-- files that will be generated for the current text file, and
+		*-- make sure the Windows shell file object reference is reset.
+		FOR yy = 1 TO ALEN( laFileTimestampInfo, 1 )
+			laFileTimestampInfo[m.yy,2] = FORCEEXT( m.lcJustFileName, laFileTimestampInfo[m.yy,1] )
+			laFileTimestampInfo[m.yy,3] = .NULL.
+		ENDFOR
+
+		IF ISNULL( taTimestampList[1] )
+			*-- There are no timestamps available.
+			lnRow = 0
+		ELSE
+			*-- Lookup the timestamp for the current text file.
+			lnRow = ASCAN( taTimestampList, laTextFileList[m.xx], 1, -1, 1, 1+2+4+8 )
+		ENDIF
+
+		*-- If a timestamp was found for the text file, store it.
+		ltFileTimestamp = IIF( m.lnRow > 0, taTimestampList[m.lnRow,2], .NULL. )
+		IF ISNULL( ltFileTimestamp )
+			*-- There is no timestamp, so nothing to check.
+		ELSE
+			*-- Get the full folder name and normalize it to backslashes.
+			lcFolder = ADDBS( m.lcRepository ) + JUSTPATH( CHRTRAN( laTextFileList[m.xx], "/", "\" ) )
+			loFolder = m.loShell.NameSpace( m.lcFolder )
+
+			llTimestampsMatch = .T.
+
+			FOR yy = 1 TO ALEN( laFileTimestampInfo, 1 )
+				*-- Get a shell object reference to the binary files
+				*-- that will be generated.
+				loBinaryFile = m.loFolder.ParseName( laFileTimestampInfo[m.yy,2] )
+				laFileTimestampInfo[m.yy,3] = m.loBinaryFile
+
+				*-- If a file with this extension does not exist yet,
+				*-- or its timestamp does not match the timestamp saved
+				*-- for the text file, then the binaries need to be
+				*-- regenerated for the current text file.
+				IF ISNULL( m.loBinaryFile ) ;
+						OR NOT m.loBinaryFile.ModifyDate = m.ltFileTimestamp
+					llTimestampsMatch = .F.
+
+					*-- Don't bother to check the rest of the binary
+					*-- files for this type.  If a file object isn't
+					*-- created here, it will get created later if it
+					*-- is needed.
+					EXIT
+				ENDIF
+			ENDFOR
+
+			*-- If all the binary files have the same timestamp as the
+			*-- text file, assume the binary files do not need to be
+			*-- regenerated and skip this file.
+			IF m.llTimestampsMatch
+				LOOP
+			ENDIF
+		ENDIF
+
+		*-- Get the full path of the current file.  Note that FULLPATH()
+		*-- normalizes any forward slashes (/) in the path to backslashes
+		*-- (\), which will be important when accessing the Projects
+		*-- collection below.
+		lcFullFileName = FULLPATH( ADDBS( m.lcRepository ) + laTextFileList[m.xx] )
+
+		llProjectOpen = .F.
+
+		*-- If project files are being generated, check if the specified
+		*-- project is open, because we can't regenerate the project
+		*-- file if it is.
+		IF m.lcBinaryExtension == "PJX" ;
+				AND _VFP.Projects.Count > 0
+			TRY
+				loProject = _VFP.Projects.Item( FORCEEXT( m.lcFullFileName, "PJX" ) )
+				llProjectOpen = .T.
+			CATCH
+				loProject = .NULL.
+				llProjectOpen = .F.
+			ENDTRY
+
+			*-- If the project was open, close it.
+			IF NOT ISNULL( m.loProject )
+				loProject.Close()
+				loProject = .NULL.
+			ENDIF
+		ENDIF
+
+		*-- Attempt to regenerate the binary files.
+		IF NOT This.ConvertVFPFile( @m.toErrorInfo, m.lcFullFileName, m.lcRepository, .T. )
+			llSuccess = .F.
+			EXIT
+		ENDIF
+
+		IF NOT ISNULL( m.ltFileTimestamp )
+			*-- We have a timestamp, so attempt to set the modification
+			*-- date of the generated binary files.
+			FOR yy = 1 TO ALEN( laFileTimestampInfo, 1 )
+				loBinaryFile = laFileTimestampInfo[m.yy,3]
+
+				*-- If the binary file did not exist earlier, or didn't
+				*-- need to be checked, then we might not have a reference
+				*-- to it, so try again to get one now.
+				IF ISNULL( m.loBinaryFile )
+					loBinaryFile = m.loFolder.ParseName( laFileTimestampInfo[m.yy,2] )
+				ENDIF
+
+				*-- If we have a reference to the binary file, set the
+				*-- modification timestamp of the binary file to match
+				*-- the text file.
+				IF NOT ISNULL( m.loBinaryFile )
+					loBinaryFile.ModifyDate = m.ltFileTimestamp
+				ENDIF
+			ENDFOR
+		ENDIF
+
+		*-- If project files were generated and the project was open,
+		*-- re-open it.
+		IF m.llProjectOpen
+			MODIFY PROJECT ( FORCEEXT( m.lcFullFileName, "PJX" ) ) NOWAIT
+		ENDIF
+	ENDFOR	&& xx = 1 TO ALEN( laTextFileList, 1 )
+
+	*-- If something failed in the file processing, abort the rest of
+	*-- this process.
+	IF NOT m.llSuccess
+		EXIT
+	ENDIF
+ENDFOR	&& lnFileType = 1 TO OCCURS( ",", m.lcVFPExtensionProcessingOrder ) + 1
+
+This.ReleaseProgressBar()
 
 RETURN m.llSuccess
 ENDFUNC
@@ -4705,6 +5084,122 @@ RETURN m.lcTextExtension
 ENDFUNC
 
 *********************************************************************
+PROTECTED FUNCTION FetchTextExtensionList
+
+*!*	This method returns the list of text extensions used for all VFP binary extensions in the specified
+*!*	folder.  It also returns the Bin2Txt configuration settings for each extension.
+
+*!*	PARAMETERS:
+*!*		  toErrorInfo (O) -	A variable passed by reference to store any error info returned from this
+*!*							method.  This will be returned as an Exception object.  This parameter is
+*!*							not required, but recommended.
+*!*		   tcFilePath (O) -	The full path to the folder whose Bin2Prg text extensions and settings are
+*!*							to be retrieved.  If omitted, the current repository folder will be used
+*!*							as the path.
+*!*		 tcCursorName (O) -	The name to use for the cursor that returns the extension list for the
+*!*							folder.  It is not required to specify a cursor name, but if no name is
+*!*							specified, a variable should be passed here by reference to receive the
+*!*							name of the cursor generated.
+
+*!*	RETURNS: Logical
+*!*		Returns true if the extension list for the folder can be successfully retrieved, otherwise
+*!*		returns .F.
+*********************************************************************
+LPARAMETERS toErrorInfo AS Exception, tcFilePath AS String, tcCursorName AS String
+
+LOCAL laVFPExtension[1], ;
+	lcFilePath, ;
+	lcTextExtension, ;
+	llSupportsBin2Prg, ;
+	llSupportsPrg2Bin, ;
+	lnConversionSupport, ;
+	lnExtensionCount, ;
+	loConverter AS C_FoxBin2Prg OF "D:\Optimal\VFP\Shared\Tools\Thor\Tools\Components\FoxBin2Prg\FoxBin2Prg.PRG", ;
+	xx
+
+*-- Text extensions can vary by folder.  We don't recommend doing that,
+*-- but we'll take that into account.  If the calling code didn't specify
+*-- the folder being used, use the repository folder.
+IF VARTYPE( m.tcFilePath ) = "C" ;
+		AND NOT EMPTY( m.tcFilePath )
+	lcFilePath = m.tcFilePath
+ELSE
+	lcFilePath = This.GetRepositoryPath()
+ENDIF
+
+*-- Make sure we have a cursor name, then generate a cursor to store
+*-- the results of this method.
+tcCursorName = IIF( VARTYPE( m.tcCursorName ) = "C" AND NOT EMPTY( m.tcCursorName ), ;
+		ALLTRIM( m.tcCursorName ), "C_Bin2PrgTextExtensionList" )
+USE IN SELECT( m.tcCursorName )
+CREATE CURSOR ( m.tcCursorName ) ;
+	( TE_VFPExtension C(3), ;
+		TE_TextExtension C(3), ;
+		TE_ConversionSupport I DEFAULT 0, ;
+		TE_SupportsBin2Prg L DEFAULT .F., ;
+		TE_SupportsPrg2Bin L DEFAULT .F. )
+INDEX ON UPPER( TE_VFPExtension ) TAG TE_EXT CANDIDATE
+
+*-- Use the Bin-to-Prg object to get the default extension used for
+*-- the text file.
+loConverter = This.GetBin2PrgConverter( @m.toErrorInfo )
+IF ISNULL( m.loConverter )
+	RETURN .F.
+ENDIF
+
+*-- Make sure the FoxBin2Prg configuration settings are loaded for the
+*-- specified folder.
+This.SetBin2PrgConfiguration( m.lcFilePath )
+
+*-- Generate the list of VFP binary extensions to lookup.
+lnExtensionCount = ALINES( laVFPExtension, "PJX,VCX,SCX,FRX,LBX,MNX,DBF,DBC", 1+4+8, "," )
+
+FOR xx = 1 TO m.lnExtensionCount
+	*-- Inialize the record in the results cursor.
+	INSERT INTO ( m.tcCursorName ) ;
+		( TE_VFPExtension ) ;
+		VALUES ;
+		( laVFPExtension[m.xx] )
+
+	*-- Get the text extension for the current binary extension.
+	lcTextExtension = UPPER( m.loConverter.get_Ext2FromExt( laVFPExtension[m.xx] ) )
+
+	*-- There is only text support if the text extension is DIFFERENT
+	*-- from the binary extension.
+	IF NOT m.lcTextExtension == laVFPExtension[m.xx]
+		*-- Lookup up the conversion support setting for the current
+		*-- extension.
+		IF laVFPExtension[m.xx] == "DBF"
+			*-- The DBF support setting will be based on the MASTER
+			*-- setting unless you specify an explicit path and file
+			*-- name.  So including the path we are checking and a file
+			*-- name gives the LOCAL setting.  The file name doesn't
+			*-- actually have to be an existing file, as long as the
+			*-- config file doesn't explicitly filter out that file
+			*-- name.
+			*-- Note that calling conversionSupportType() in this way
+			*-- also ensures that the subsequent call to hasSupport_Prg2Bin()
+			*-- will return the correct value.
+			lnConversionSupport = m.loConverter.conversionSupportType( ADDBS( m.lcFilePath ) + "FileName." ;
+					+ laVFPExtension[m.xx] )
+		ELSE
+			lnConversionSupport = m.loConverter.conversionSupportType( laVFPExtension[m.xx] )
+		ENDIF
+
+		llSupportsBin2Prg = m.loConverter.hasSupport_Bin2Prg( laVFPExtension[m.xx] )
+		llSupportsPrg2Bin = m.loConverter.hasSupport_Prg2Bin( m.lcTextExtension )
+
+		REPLACE TE_TextExtension WITH m.lcTextExtension, ;
+				TE_ConversionSupport WITH m.lnConversionSupport, ;
+				TE_SupportsBin2Prg WITH m.llSupportsBin2Prg, ;
+				TE_SupportsPrg2Bin WITH m.llSupportsPrg2Bin ;
+				IN ( m.tcCursorName )
+	ENDIF
+ENDFOR
+
+ENDFUNC
+
+*********************************************************************
 PROTECTED FUNCTION GetTextFilename
 
 *!*	This method determines the name of the text file that will be generated for a specified VFP
@@ -5108,6 +5603,237 @@ RETURN m.llSuccess
 ENDFUNC
 
 *********************************************************************
+PROCEDURE LoadProgressBar
+
+*!*	This is a wrapper method for loading the FoxBin2Prg progress bar form.  It also adds some features
+*!*	to enhance working with that progress bar.
+
+*!*	PARAMETERS:
+*!*			tcMessage (O) -	Pass a message to display for the first progress bar, if you want to
+*!*							display something as soon as the form is loaded.
+*!*		 tnTotalCount (O) -	Pass the total number of items for the first progress bar, if you want
+*!*							to initialize that count for the rest of the process.
+
+*!*	RETURNS: Nothing
+*********************************************************************
+LPARAMETERS tcMessage AS String, tnTotalCount AS Integer
+
+LOCAL loConverter AS C_FoxBin2Prg OF "D:\Optimal\VFP\Shared\Tools\Thor\Tools\Components\FoxBin2Prg\FoxBin2Prg.PRG"
+
+*-- Get a reference to the conversion object.
+loConverter = This.GetBin2PrgConverter()
+IF ISNULL( m.loConverter )
+	RETURN
+ENDIF
+
+*-- Load the progress form.
+loConverter.LoadProgressBarForm()
+
+*-- Initialize the properties used internally to keep track of the
+*-- settings passed to the progress bar form.
+STORE SPACE(0) TO This.icProgressBar1LastMessage, ;
+				This.icProgressBar2LastMessage
+
+STORE 0 TO This.inProgressBar1LastItem, ;
+		This.inProgressBar2LastItem, ;
+		This.inProgressBar1TotalCount, ;
+		This.inProgressBar2TotalCount
+
+*-- Make sure the parameters passed here are the correct data type.
+tcMessage = IIF( VARTYPE( m.tcMessage ) = "C", m.tcMessage, SPACE(0) )
+tnTotalCount = IIF( VARTYPE( m.tnTotalCount ) = "N", m.tnTotalCount, 0 )
+
+*-- If a message or total count was passed, update the progress bar
+*-- to display that information.
+IF NOT EMPTY( m.tcMessage ) ;
+		OR m.tnTotalCount > 0
+	This.UpdateProgressBar( m.tcMessage, 0, m.tnTotalCount, 1 )
+ENDIF
+
+ENDPROC
+
+*********************************************************************
+PROCEDURE UpdateProgressBar
+
+*!*	This is a wrapper method for updating the FoxBin2Prg progress bar form.
+
+*!*	PARAMETERS:
+*!*			tcMessage (O) -	The message to display for the specified progress bar.  If omitted, the
+*!*							last message displayed for the specified bar will be used.
+*!*		 tnItemNumber (O) -	The number of items that have been processed so far for the specified
+*!*							progress bar.  If omitted, the last item number that was used will be
+*!*							incremented an used as the new item number.
+*!*		 tnTotalCount (O) -	The total number of items being processed for the specified progress bar.
+*!*							If omitted, the total number of items last specified for the bar will be
+*!*							used.
+*!*		  tnBarNumber (O) -	Indicates which bar number to apply the other settings to.  Can be 1 or
+*!*							2.  If omitted, defaults to 1.
+
+*!*	RETURNS: Nothing
+*********************************************************************
+LPARAMETERS tcMessage AS String, tnItemNumber AS Integer, tnTotalCount AS Integer, tnBarNumber AS Integer
+
+LOCAL loConverter AS C_FoxBin2Prg OF "D:\Optimal\VFP\Shared\Tools\Thor\Tools\Components\FoxBin2Prg\FoxBin2Prg.PRG"
+
+*-- Make sure we have a reference to the conversion object.
+loConverter = This.GetBin2PrgConverter()
+IF ISNULL( m.loConverter )
+	RETURN
+ENDIF
+
+*-- Make sure the progress bar form is loaded.  If it's already loaded,
+*-- this method does nothing.
+loConverter.LoadProgressBarForm()
+
+*-- Make sure we have a valid bar number.
+IF NOT VARTYPE( m.tnBarNumber ) = "N" ;
+		OR NOT INLIST( m.tnBarNumber, 1, 2 )
+	tnBarNumber = 1
+ENDIF
+
+*-- Make sure we have a message to display.
+DO CASE
+	CASE NOT VARTYPE( m.tcMessage ) = "C" ;
+			OR EMPTY( m.tcMessage )
+		*-- No message was specified, so use the last message displayed
+		*-- for the specified bar.
+		tcMessage = IIF( m.tnBarNumber = 1, This.icProgressBar1LastMessage, This.icProgressBar2LastMessage )
+
+	CASE m.tnBarNumber = 1
+		*-- A message was specified for bar 1, so save a copy of it.
+		This.icProgressBar1LastMessage = m.tcMessage
+
+	OTHERWISE
+		*-- A message was specified for bar 2, so save a copy of it.
+		This.icProgressBar1LastMessage = m.tcMessage
+ENDCASE
+
+*-- Make sure we have an item number to display.
+DO CASE
+	CASE NOT VARTYPE( m.tnItemNumber ) = "N" ;
+			OR m.tnItemNumber < 0
+		*-- No item number was specified, so increment the last item
+		*-- number used for the bar and use it.
+		IF m.tnBarNumber = 1
+			tnItemNumber = This.inProgressBar1LastItem + 1
+			This.inProgressBar1LastItem = m.tnItemNumber
+		ELSE
+			tnItemNumber = This.inProgressBar2LastItem + 1
+			This.inProgressBar2LastItem = m.tnItemNumber
+		ENDIF
+
+	CASE m.tnBarNumber = 1
+		*-- An item number was specified for bar 1, so save a copy of
+		*-- it.
+		This.inProgressBar1LastItem = m.tnItemNumber
+
+	OTHERWISE
+		*-- An item number was specified for bar 2, so save a copy of
+		*-- it.
+		This.inProgressBar2LastItem = m.tnItemNumber
+ENDCASE
+
+*-- Make sure we have a total count.
+DO CASE
+	CASE NOT VARTYPE( m.tnTotalCount ) = "N" ;
+			OR m.tnTotalCount < 0
+		*-- No total count was specified, so use the last total for the
+		*-- specified bar.
+		tnTotalCount = IIF( m.tnBarNumber = 1, This.inProgressBar1TotalCount, This.inProgressBar2TotalCount )
+
+	CASE m.tnBarNumber = 1
+		*-- A total count was specified for bar 1, so save a copy of it.
+		This.inProgressBar1TotalCount = m.tnTotalCount
+
+	OTHERWISE
+		*-- A total count was specified for bar 2, so save a copy of it.
+		This.inProgressBar2TotalCount = m.tnTotalCount
+ENDCASE
+
+*-- FoxBin2Prg refers to the bars as 0 and 1, so adjust our bar number
+*-- to match.
+tnBarNumber = m.tnBarNumber - 1
+
+*-- Call the FoxBin2Prg method to update the progress bar.
+loConverter.UpdateProgressBar( m.tcMessage, m.tnItemNumber, m.tnTotalCount, m.tnBarNumber )
+
+ENDPROC
+
+*********************************************************************
+PROCEDURE ReleaseProgressBar
+
+*!*	This is a wrapper method for releasing the FoxBin2Prg progress bar form.
+
+*!*	PARAMETERS: None
+
+*!*	RETURNS: Nothing
+*********************************************************************
+LOCAL loConverter AS C_FoxBin2Prg OF "D:\Optimal\VFP\Shared\Tools\Thor\Tools\Components\FoxBin2Prg\FoxBin2Prg.PRG"
+
+*-- Make sure we have a reference to the conversion object.
+loConverter = This.GetBin2PrgConverter()
+IF ISNULL( m.loConverter )
+	RETURN
+ENDIF
+
+*-- Force the progress bar form to be released.
+loConverter.UnloadProgressBarForm(.T.)
+
+ENDPROC
+
+*********************************************************************
+PROCEDURE ShowError
+
+*!*	This method simplifies the task of displaying error info generated by this class.
+
+*!*	PARAMETERS:
+*!*		  toErrorInfo (R) -	An Exception object whose contents are to be displayed.  If omitted or
+*!*							invalid, the call stack will be displayed to at least help to track down
+*!*							what code failed without providing error info.
+*!*		 tcRepository (O) -	The repository that was being processed when the error occurred.  This
+*!*							is just added to the error message as-is to indicate which repository was
+*!*							being processed when the error occurred.
+
+*!*	RETURNS: Nothing
+*********************************************************************
+LPARAMETERS toErrorInfo AS Exception, tcRepository AS String
+
+LOCAL laCallStack[1], ;
+	lcResult, ;
+	xx
+
+*-- Initialize the message with the name of the repository, if it was
+*-- specified.
+lcResult = IIF( VARTYPE( m.tcRepository ) = "C" AND NOT EMPTY( m.tcRepository ), ;
+		"Repository: " + ALLTRIM( m.tcRepository ) + CHR(13) + CHR(13), SPACE(0) )
+
+IF VARTYPE( m.toErrorInfo ) = "O"
+	*-- An exception object was passed.  Report any helpful error info
+	*-- it contains.
+	lcResult = m.lcResult + IIF( m.toErrorInfo.ErrorNo = 0, SPACE(0), ;
+				"Error " + TRANSFORM( m.toErrorInfo.ErrorNo ) + CHR(13) ) ;
+			+ m.toErrorInfo.Message ;
+			+ IIF( EMPTY( m.toErrorInfo.LineContents ), SPACE(0), ;
+				+ CHR(13) + CHR(13) + "Command:  " + m.toErrorInfo.LineContents )
+ELSE
+	*-- No error info was specified.  Report that, and include the call
+	*-- stack to help us track down code which is failing without generating
+	*-- error info.
+	lcResult = lcResult + "No error information provided." + CHR(13) + CHR(13) ;
+			+ "Current call stack:"
+
+	ASTACKINFO( laCallStack )
+	FOR xx = 1 TO ALEN( laCallStack, 1 )
+		lcResult = m.lcResult + CHR(13) + SPACE(3) + EVL( laCallStack[m.xx,3], laCallStack[m.xx,4] )
+	ENDFOR
+ENDIF
+
+MESSAGEBOX( m.lcResult, 16, "Git/Hg Utilities Error" )
+
+RETURN
+ENDPROC
+
+*********************************************************************
 PROCEDURE SelfTest
 
 *!*	A method for code that can be run to test if this class is working properly.
@@ -5120,12 +5846,24 @@ LOCAL lcAlias, ;
 	llSuccess, ;
 	loErrorInfo AS Exception
 
-lcRepository = "C:\Work\VFP\Shared\Lib"
+lcRepository = "D:\Work\VFP\Shared\Lib"
 
 lcRepository = GETDIR( m.lcRepository, "Select a Git/Hg repository to check its status", ;
 		"Select Git/Hg Repository", 1+64+512 )
 IF EMPTY( m.lcRepository )
 	RETURN
+ENDIF
+
+*!*	ASSERT .f.
+
+lcAlias = SPACE(0)
+IF This.FetchTextExtensionList( @m.loErrorInfo, m.lcRepository, @m.lcAlias )
+	WAIT WINDOW "Text settings for repository '" + m.lcRepository + "'" NOWAIT NOCLEAR
+	SELECT ( m.lcAlias )
+	BROWSE LAST NOCAPTIONS
+	WAIT CLEAR
+ELSE
+	This.ShowError( m.loErrorInfo, m.lcRepository )
 ENDIF
 
 lcAlias = SPACE(0)
@@ -5137,13 +5875,7 @@ IF m.llSuccess
 	BROWSE LAST NOCAPTIONS
 	WAIT CLEAR
 ELSE
-	lcResult = IIF( m.loErrorInfo.ErrorNo = 0, SPACE(0), ;
-				"Error " + TRANSFORM( m.loErrorInfo.ErrorNo ) + CHR(13) ) ;
-			+ m.loErrorInfo.Message ;
-			+ IIF( EMPTY( m.loErrorInfo.LineContents ), SPACE(0), ;
-				+ CHR(13) + CHR(13) + "Command:  " + m.loErrorInfo.LineContents )
-
-	MESSAGEBOX( "Repository: " + m.lcRepository + CHR(13) + CHR(13) + m.lcResult, 16, PROGRAM() )
+	This.ShowError( m.loErrorInfo, m.lcRepository )
 ENDIF
 
 lcAlias = SPACE(0)
@@ -5151,11 +5883,7 @@ llSuccess = This.FetchRepoStatus( @m.loErrorInfo, m.lcRepository, @m.lcAlias )
 
 DO CASE
 	CASE NOT m.llSuccess
-		lcResult = IIF( m.loErrorInfo.ErrorNo = 0, SPACE(0), ;
-					"Error " + TRANSFORM( m.loErrorInfo.ErrorNo ) + CHR(13) ) ;
-				+ m.loErrorInfo.Message ;
-				+ IIF( EMPTY( m.loErrorInfo.LineContents ), SPACE(0), ;
-					+ CHR(13) + CHR(13) + "Command:  " + m.loErrorInfo.LineContents )
+		This.ShowError( m.loErrorInfo, m.lcRepository )
 
 	CASE RECCOUNT( m.lcAlias ) = 0
 		lcResult = "No changes detected"
@@ -5164,8 +5892,9 @@ DO CASE
 		lcResult = TRANSFORM( RECCOUNT( m.lcAlias ) ) + " change(s) detected"
 ENDCASE
 
-MESSAGEBOX( "Repository: " + m.lcRepository + CHR(13) + CHR(13) + m.lcResult, ;
-		IIF( m.llSuccess, 64, 16 ), PROGRAM() )
+IF m.llSuccess
+	MESSAGEBOX( "Repository: " + m.lcRepository + CHR(13) + CHR(13) + m.lcResult, 64, PROGRAM() )
+ENDIF
 
 IF USED( m.lcAlias ) ;
 		AND RECCOUNT( m.lcAlias ) > 0
@@ -5182,10 +5911,7 @@ IF m.llSuccess
 	BROWSE LAST NOCAPTIONS
 	WAIT CLEAR
 ELSE
-	lcResult = "Error " + TRANSFORM( m.loErrorInfo.ErrorNo ) + CHR(13) ;
-			+ m.loErrorInfo.Message + CHR(13) + CHR(13) ;
-			+ "Command:  " + m.loErrorInfo.LineContents
-	MESSAGEBOX( m.lcResult, 16, PROGRAM() )
+	This.ShowError( m.loErrorInfo )
 ENDIF
 
 lcProjectName = SPACE(0)
@@ -5194,10 +5920,7 @@ llSuccess = This.BinaryToTextProject( @m.loErrorInfo, @m.lcProjectName, m.llClea
 IF m.llSuccess
 	MESSAGEBOX( "Binary to Text successful for " + m.lcProjectName, 64, PROGRAM() )
 ELSE
-	lcResult = "Error " + TRANSFORM( m.loErrorInfo.ErrorNo ) + CHR(13) ;
-			+ m.loErrorInfo.Message + CHR(13) + CHR(13) ;
-			+ "Command:  " + m.loErrorInfo.LineContents
-	MESSAGEBOX( m.lcResult, 16, PROGRAM() )
+	This.ShowError( m.loErrorInfo )
 ENDIF
 
 ENDPROC
