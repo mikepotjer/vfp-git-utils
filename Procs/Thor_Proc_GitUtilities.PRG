@@ -1292,8 +1292,11 @@ CATCH TO toErrorInfo
 	llSuccess = .F.
 
 	*-- If the macro-expansion failed, copy the query we were trying
-	*-- to execute into the line contents.
-	IF LOWER( ALLTRIM( m.toErrorInfo.LineContents ) ) = "&lcsql."
+	*-- to execute into the line contents.  Note that VFP gets confused
+	*-- if the ampersand isn't separated from the rest of the string,
+	*-- and thinks it's dealing with a macro-expansion instead of a
+	*-- string.
+	IF LOWER( ALLTRIM( m.toErrorInfo.LineContents ) ) = "&" + "lcsql."
 		toErrorInfo.LineContents = m.lcSQL
 	ENDIF
 ENDTRY
@@ -3715,7 +3718,7 @@ LOCAL laBinaryFileList[1], ;
 	lnFileCount, ;
 	lnFileType, ;
 	lnRow, ;
-	loBinaryFile AS SHELL.FolderItem, ;
+	loFile AS SHELL.FolderItem, ;
 	loFolder AS SHELL.Folder, ;
 	loShell AS Shell.Shell, ;
 	ltFileTimestamp, ;
@@ -3769,11 +3772,10 @@ IF ISNULL( taTimestampList[1] ) ;
 	This.ReadRepoTimestampFile( @m.toErrorInfo, m.lcRepository, .NULL., @taTimestampList )
 ENDIF
 
-*-- If there are timestamps available, get a Windows shell object to
-*-- set the modification dates.
-IF NOT ISNULL( taTimestampList[1] )
-	loShell = CREATEOBJECT( "Shell.Application" )
-ENDIF
+*-- Get a Windows shell object to set the modification dates.  Note
+*-- that dates will be set even if a timestamp file is not used, so we
+*-- can tell if this process has been run earlier.
+loShell = CREATEOBJECT( "Shell.Application" )
 
 This.ShowMessage( "Regenerating binaries for repository:" + CHR(13) + m.lcRepository )
 This.LoadProgressBar()
@@ -3873,6 +3875,10 @@ FOR lnFileType = 1 TO m.lnBinaryTypeCount
 
 		lcJustFileName = JUSTFNAME( laTextFileList[m.xx] )
 
+		*-- Get the full folder name and normalize it to backslashes.
+		lcFolder = ADDBS( m.lcRepository ) + JUSTPATH( CHRTRAN( laTextFileList[m.xx], "/", "\" ) )
+		loFolder = m.loShell.NameSpace( m.lcFolder )
+
 		*-- Set the relative path and file name for each of the binary
 		*-- files that will be generated for the current text file, and
 		*-- make sure the Windows shell file object reference is reset.
@@ -3881,37 +3887,45 @@ FOR lnFileType = 1 TO m.lnBinaryTypeCount
 			laFileTimestampInfo[m.yy,3] = .NULL.
 		ENDFOR
 
-		IF ISNULL( taTimestampList[1] )
-			*-- There are no timestamps available.
-			lnRow = 0
-		ELSE
-			*-- Lookup the timestamp for the current text file.
-			lnRow = ASCAN( taTimestampList, laTextFileList[m.xx], 1, -1, 1, 1+2+4+8 )
-		ENDIF
+		DO CASE
+			CASE NOT ISNULL( taTimestampList[1] )
+				*-- Lookup the timestamp for the current text file.  If
+				*-- one was found, store it.
+				lnRow = ASCAN( taTimestampList, laTextFileList[m.xx], 1, -1, 1, 1+2+4+8 )
+				ltFileTimestamp = IIF( m.lnRow > 0, taTimestampList[m.lnRow,2], .NULL. )
 
-		*-- If a timestamp was found for the text file, store it.
-		ltFileTimestamp = IIF( m.lnRow > 0, taTimestampList[m.lnRow,2], .NULL. )
+			CASE NOT ISNULL( m.loFolder )
+				*-- There are no timestamps available, but we have a
+				*-- folder object, so lookup the file object and use
+				*-- its current modification date.  It is virtually
+				*-- impossible for the binaries to have the same date
+				*-- and time as the text file unless we set those values
+				*-- here.
+				loFile = m.loFolder.ParseName( lcJustFileName )
+				ltFileTimestamp = IIF( ISNULL( m.loFile ), .NULL., m.loFile.ModifyDate )
+
+			OTHERWISE
+				*-- We can't get a timestamp for the text file.
+				ltFileTimestamp = .NULL.
+		ENDCASE
+
 		IF ISNULL( ltFileTimestamp )
 			*-- There is no timestamp, so nothing to check.
 		ELSE
-			*-- Get the full folder name and normalize it to backslashes.
-			lcFolder = ADDBS( m.lcRepository ) + JUSTPATH( CHRTRAN( laTextFileList[m.xx], "/", "\" ) )
-			loFolder = m.loShell.NameSpace( m.lcFolder )
-
 			llTimestampsMatch = .T.
 
 			FOR yy = 1 TO ALEN( laFileTimestampInfo, 1 )
 				*-- Get a shell object reference to the binary files
 				*-- that will be generated.
-				loBinaryFile = m.loFolder.ParseName( laFileTimestampInfo[m.yy,2] )
-				laFileTimestampInfo[m.yy,3] = m.loBinaryFile
+				loFile = m.loFolder.ParseName( laFileTimestampInfo[m.yy,2] )
+				laFileTimestampInfo[m.yy,3] = m.loFile
 
 				*-- If a file with this extension does not exist yet,
 				*-- or its timestamp does not match the timestamp saved
 				*-- for the text file, then the binaries need to be
 				*-- regenerated for the current text file.
-				IF ISNULL( m.loBinaryFile ) ;
-						OR NOT m.loBinaryFile.ModifyDate = m.ltFileTimestamp
+				IF ISNULL( m.loFile ) ;
+						OR NOT m.loFile.ModifyDate = m.ltFileTimestamp
 					llTimestampsMatch = .F.
 
 					*-- Don't bother to check the rest of the binary
@@ -3955,20 +3969,20 @@ FOR lnFileType = 1 TO m.lnBinaryTypeCount
 			*-- We have a timestamp, so attempt to set the modification
 			*-- date of the generated binary files.
 			FOR yy = 1 TO ALEN( laFileTimestampInfo, 1 )
-				loBinaryFile = laFileTimestampInfo[m.yy,3]
+				loFile = laFileTimestampInfo[m.yy,3]
 
 				*-- If the binary file did not exist earlier, or didn't
 				*-- need to be checked, then we might not have a reference
 				*-- to it, so try again to get one now.
-				IF ISNULL( m.loBinaryFile )
-					loBinaryFile = m.loFolder.ParseName( laFileTimestampInfo[m.yy,2] )
+				IF ISNULL( m.loFile )
+					loFile = m.loFolder.ParseName( laFileTimestampInfo[m.yy,2] )
 				ENDIF
 
 				*-- If we have a reference to the binary file, set the
 				*-- modification timestamp of the binary file to match
 				*-- the text file.
-				IF NOT ISNULL( m.loBinaryFile )
-					loBinaryFile.ModifyDate = m.ltFileTimestamp
+				IF NOT ISNULL( m.loFile )
+					loFile.ModifyDate = m.ltFileTimestamp
 				ENDIF
 			ENDFOR
 		ENDIF
@@ -4733,6 +4747,7 @@ loScope = CREATEOBJECT( "Empty" )
 ADDPROPERTY( m.loScope, "cScope", SPACE(0) )
 ADDPROPERTY( m.loScope, "lScopeIsProject", .NULL. )
 ADDPROPERTY( m.loScope, "oException", .NULL. )
+ADDPROPERTY( m.loScope, "lUserCancelled", .F. )
 
 tcScope = IIF( VARTYPE( m.tcScope ) = "C", ALLTRIM( m.tcScope ), SPACE(0) )
 tcFormCaption = IIF( VARTYPE( m.tcFormCaption ) = "C" AND NOT EMPTY( m.tcFormCaption ), ;
@@ -4794,6 +4809,9 @@ DO CASE
 			*-- because the form was closed without clicking the "Go"
 			*-- button.
 			IF NOT VARTYPE( m.loScopeForm ) = "O"
+				*-- Set a flag to make it easier to check for a cancel
+				*-- condition.
+				loScope.lUserCancelled = .T.
 				ERROR "Process cancelled by user -- no scope selected for this process."
 			ENDIF
 
