@@ -7,8 +7,8 @@ WITH toUpdateInfo
     .ApplicationName = 'Git and Hg Utilities (Beta)'
     .Component       = 'No'
     .ToolName        = 'Thor_Tool_ThorInternalRepository'
-    .VersionNumber   = 'v2016.12.09.beta'
-    .VersionDate     = DATE(2016, 12, 9)
+    .VersionNumber   = 'v2016.12.19.beta'
+    .VersionDate     = DATE(2016, 12, 19)
     .SourceFileUrl   = 'https://bitbucket.org/mikepotjer/vfp-git-utils/downloads/GitUtils-Beta.zip'
     .LinkPrompt      = 'Git/Hg Utilities for VFP Home Page'
     .Link            = 'https://bitbucket.org/mikepotjer/vfp-git-utils'
@@ -27,6 +27,10 @@ The Git-Hg Utilities ease the process of working with VFP's binary files when us
 These utilities require the Thor repository, FoxBin2Prg, Git for Windows or Mercurial for Windows, and the Windows Scripting Host.
 
 ==== Change History ====
+2016.12.19.beta
+ - When the ability to regenerate all VFP binaries from text files was added in 2016.12.09.beta, I failed to update the process that regenerates the .MPR/.MPX files to take into account that the .MNX file might not be included in the list of repository files.  This has been corrected, so that .MPR/.MPX files will be regenerated and compiled as needed after the .MNX/.MNT files have been regenerated from text.
+ - The features of the "Post-checkout/update" process that regenerate the .MPR/.MPX files and recompile the .PRG files will now check if .MPR, .MPX, or .FXP files are committed to the repository before overwriting them.  This change gives developers more flexibility regarding the types of files that are tracked in their repositories.
+
 2016.12.09.beta
  - The Git-Hg tools have been enhanced to support any repository that uses FoxBin2Prg text files, regardless of whether the VFP binary files are being tracked in the repository.
    -- In the "Post-checkout file synchronization" process, for any FoxBin2Prg text file whose VFP binaries are not being tracked in the same repository, FoxBin2Prg will be called to regenerate the binaries.

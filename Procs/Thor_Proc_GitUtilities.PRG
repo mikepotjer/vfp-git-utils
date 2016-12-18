@@ -4010,10 +4010,16 @@ ENDFUNC
 *********************************************************************
 FUNCTION RegenerateRepoMenus
 
-*!*	This method regenerates the menu code files (.MPR/.MPX) for any menu binary files (.MNX) committed
-*!*	to the specified Git repository.  The code files and object code for menus typically aren't
-*!*	committed to a repository, so this ensures they are in synch with different versions of the menus
-*!*	which have been checked out.
+*!*	This method makes sure that the menu code files (.MPR/.MPX) for any menu files committed to the
+*!*	specified repository are regenerated or recompiled.  This method does NOT regenerate the menu
+*!*	binary files (.MNX/.MNT), so This.RegenerateRepoBinaries() must be called before calling this
+*!*	method.
+*!*	-	If both the .MPR and .MPX file for a menu are tracked in the repository, then this method
+*!*		will skip that menu.
+*!*	-	If just the .MPR file is tracked in the repository, it will be recompiled to generate the
+*!*		.MPX file.
+*!*	-	If neither file is tracked in the repository, this method will call This.GenerateMenuCode()
+*!*		to regenerate the .MPR file and recompile it.
 
 *!*	PARAMETERS:
 *!*			  toErrorInfo (O) -	A variable passed by reference to store any error info returned from
@@ -4043,15 +4049,20 @@ LPARAMETERS toErrorInfo AS Exception, tcRepository AS String, tcFileListAlias AS
 
 EXTERNAL ARRAY taTimestampList
 
-LOCAL laFileList[1], ;
+LOCAL laMenuFileList[1], ;
+	laTextFileList[1], ;
 	lcFolder, ;
 	lcFullFileName, ;
 	lcJustFileName, ;
 	lcMessage, ;
 	lcRepository, ;
+	lcTextExtension, ;
+	llRecompileMPR, ;
 	llSuccess, ;
 	lnRow, ;
+	loFile AS SHELL.FolderItem, ;
 	loFolder AS SHELL.Folder, ;
+	loMNXItem AS SHELL.FolderItem, ;
 	loMPRItem AS SHELL.FolderItem, ;
 	loMPXItem AS SHELL.FolderItem, ;
 	loShell AS Shell.Shell, ;
@@ -4079,19 +4090,33 @@ IF NOT m.llSuccess ;
 	RETURN m.llSuccess
 ENDIF
 
-*-- Retrieve a list of the menu files in this repository folder.
+*-- Lookup the text extension specified for menu files in this repository.
+lcTextExtension = This.GetTextExtension( "MNX", m.lcRepository )
+
+DIMENSION laTextFileList[1]
+laTextFileList = .NULL.
+
+*-- Retrieve a list of the menu text files in this repository folder.
 SELECT GL_FileName ;
 	FROM ( m.tcFileListAlias ) ;
-	WHERE UPPER( RTRIM( GL_FileExtension ) ) == "MNX" ;
-	INTO ARRAY laFileList
+	WHERE UPPER( RTRIM( GL_FileExtension ) ) == m.lcTextExtension ;
+	INTO ARRAY laTextFileList
 
 *-- There are no menu files that are committed to the repository, so
 *-- nothing to do here.
-IF _TALLY = 0
+IF ISNULL( laTextFileList[1] )
 	RETURN m.llSuccess
 ENDIF
 
-*{ MJP -- 08/27/2016 04:34:32 PM - Begin
+DIMENSION laMenuFileList[1]
+laMenuFileList = .NULL.
+
+*-- Retrieve a list of the menu files in this repository folder.
+SELECT GL_FileName ;
+	FROM ( m.tcFileListAlias ) ;
+	WHERE UPPER( LEFT( GL_FileExtension, 3 ) ) IN ( "MNX", "MPR", "MPX" ) ;
+	INTO ARRAY laMenuFileList
+
 *-- Make sure the timestamp list parameter is defined as an array.
 IF NOT TYPE( "taTimestampList", 1 ) = "A"
 	DIMENSION taTimestampList[1]
@@ -4106,101 +4131,220 @@ IF ISNULL( taTimestampList[1] ) ;
 	This.ReadRepoTimestampFile( @m.toErrorInfo, m.lcRepository, .NULL., @taTimestampList )
 ENDIF
 
-*-- If there are timestamps available, get a Windows shell object to
-*-- set the modification dates.
-IF NOT ISNULL( taTimestampList[1] )
-	loShell = CREATEOBJECT( "Shell.Application" )
-ENDIF
-*} MJP -- 08/27/2016 04:34:32 PM - End
+*-- Get a Windows shell object to set the modification dates, even if
+*-- a timestamp file is not used.
+loShell = CREATEOBJECT( "Shell.Application" )
 
+
+*********************************************************************
+*-- Regenerate all the menu code.
+*********************************************************************
 lcMessage = "Regenerating menu code files for repository:" + CHR(13) ;
 		+ m.lcRepository + CHR(13) ;
 		+ "Regenerating menu: "
 
-*-- Regenerate all the menu code.
-FOR xx = 1 TO ALEN( laFileList, 1 )
-	This.ShowMessage( m.lcMessage + laFileList[m.xx] )
+FOR xx = 1 TO ALEN( laTextFileList, 1 )
+	This.ShowMessage( m.lcMessage + FORCEEXT( laTextFileList[m.xx], "MNX" ) )
 
-	*{ MJP -- 08/27/2016 04:43:16 PM - Begin
-	IF ISNULL( taTimestampList[1] )
-		*-- There are no timestamps available.
-		lnRow = 0
-	ELSE
-		*-- Lookup the timestamp for the current .MNX file.
-		lnRow = ASCAN( taTimestampList, laFileList[m.xx], 1, -1, 1, 1+2+4+8 )
-	ENDIF
+	*-- Get the full folder name and normalize it to backslashes.
+	lcFolder = ADDBS( m.lcRepository ) + JUSTPATH( CHRTRAN( laTextFileList[m.xx], "/", "\" ) )
+	loFolder = m.loShell.NameSpace( m.lcFolder )
 
-	*-- If a timestamp was found for the .MNX file, store it.
-	ltFileTimestamp = IIF( m.lnRow > 0, taTimestampList[m.lnRow,2], .NULL. )
-	IF ISNULL( ltFileTimestamp )
-		*-- Make sure the menu code objects are cleared when there is
-		*-- no timestamp to restore.
-		loMPRItem = .NULL.
-		loMPXItem = .NULL.
-	ELSE
-		lcJustFileName = JUSTFNAME( laFileList[m.xx] )
+	lcJustFileName = JUSTFNAME( laTextFileList[m.xx] )
 
-		*-- Get the full folder name and normalize it to backslashes.
-		lcFolder = ADDBS( m.lcRepository ) + JUSTPATH( CHRTRAN( laFileList[m.xx], "/", "\" ) )
+	*-- Check for the .MNX file.  There's nothing to do if this file
+	*-- hasn't been generated yet.
+	loMNXItem = m.loFolder.ParseName( FORCEEXT( m.lcJustFileName, "MNX" ) )
 
-		*-- Get a shell object reference to the .MPR and .MPX files
-		*-- that will be generated.
-		loFolder = m.loShell.NameSpace( m.lcFolder )
-		loMPRItem = m.loFolder.ParseName( FORCEEXT( m.lcJustFileName, "MPR" ) )
-		loMPXItem = m.loFolder.ParseName( FORCEEXT( m.lcJustFileName, "MPX" ) )
-
-		*-- If both the .MPR and .MPX files have the same timestamp as
-		*-- the .MNX file, assume the menu does not need to be regenerated
-		*-- and skip it.
-		IF NOT ISNULL( m.loMPRItem ) ;
-				AND NOT ISNULL( m.loMPXItem ) ;
-				AND m.loMPRItem.ModifyDate = m.ltFileTimestamp ;
-				AND m.loMPXItem.ModifyDate = m.ltFileTimestamp
+	llRecompileMPR = .F.
+	DO CASE
+		CASE ISNULL( m.loMNXItem )
+			*-- The .MNX file doesn't exist yet, so nothing to do.
 			LOOP
+
+		CASE ISNULL( laMenuFileList[1] )
+			*-- There are no menu binary files in the repository, so
+			*-- the program file needs to be regenerated.
+
+		CASE ASCAN( laMenuFileList, FORCEEXT( laTextFileList[m.xx], "MPR" ), 1, -1, 1, 1+2+4 ) = 0
+			*-- The .MPR isn't being tracked in the repository, so it
+			*-- needs to be regenerated.
+
+		CASE ASCAN( laMenuFileList, FORCEEXT( laTextFileList[m.xx], "MPX" ), 1, -1, 1, 1+2+4 ) = 0
+			*-- The .MPR was being tracked, but the .MPX file is not,
+			*-- so the .MPR file needs to be recompiled.
+			llRecompileMPR = .T.
+
+		OTHERWISE
+			*-- Both the .MPR and .MPX files are being tracked, so
+			*-- nothing to do for this menu.
+			LOOP
+	ENDCASE
+
+	IF m.llRecompileMPR
+		*********************************************************************
+		*-- The .MPR file is tracked in the repo, so it check if it needs to
+		*-- be recompiled.
+		*********************************************************************
+		IF ISNULL( taTimestampList[1] )
+			*-- There are no timestamps available, so just use the
+			*-- current modification date of the .MPR file to check if
+			*-- the file needs to be recompiled.
+			loFile = m.loFolder.ParseName( FORCEEXT( m.lcJustFileName, "MPR" ) )
+			ltFileTimestamp = IIF( ISNULL( m.loFile ), .NULL., m.loFile.ModifyDate )
+		ELSE
+			*-- Lookup the timestamp for the current .MPR file.  If a
+			*-- timestamp was found for it, store it.
+			lnRow = ASCAN( taTimestampList, FORCEEXT( laTextFileList[m.xx], "MPR" ), 1, -1, 1, 1+2+4+8 )
+			ltFileTimestamp = IIF( m.lnRow > 0, taTimestampList[m.lnRow,2], .NULL. )
 		ENDIF
-	ENDIF
-	*} MJP -- 08/27/2016 04:43:16 PM - End
 
-	*-- Get the full path of the current file.  Note that FULLPATH()
-	*-- normalizes any forward slashes (/) in the path to backslashes
-	*-- (\).
-	lcFullFileName = FULLPATH( ADDBS( m.lcRepository ) + laFileList[m.xx] )
+		IF ISNULL( m.ltFileTimestamp )
+			*-- There's no .MPR timestamp to compare, so no need to
+			*-- retrieve the .MPX modification date.
+			loMPXItem = .NULL.
+		ELSE
+			*-- Lookup the .MPX file for this menu.  If its modification
+			*-- date matches the .MPR file, there's no need to compile
+			*-- it.
+			loMPXItem = m.loFolder.ParseName( FORCEEXT( m.lcJustFileName, "MPX" ) )
 
-	*-- Attempt to generate the code files for this menu file.
-	IF NOT This.GenerateMenuCode( @m.toErrorInfo, m.lcFullFileName )
-		llSuccess = .F.
+			IF NOT ISNULL( m.loMPXItem ) ;
+					AND m.loMPXItem.ModifyDate = m.ltFileTimestamp
+				LOOP
+			ENDIF
+		ENDIF
+
+		*-- Get the full path of the .MPR file, and attempt to compile
+		*-- it.  Note that FULLPATH() normalizes any forward slashes
+		*-- (/) in the path to backslashes (\).
+		lcFullFileName = FULLPATH( ADDBS( m.lcRepository ) + FORCEEXT( laTextFileList[m.xx], "MPR" ) )
+		TRY
+			COMPILE ( m.lcFullFileName )
+
+		CATCH TO toErrorInfo
+			llSuccess = .F.
+		ENDTRY
+
+		IF m.llSuccess ;
+				AND NOT ISNULL( m.ltFileTimestamp )
+			*-- The .MPX file was compiled, and the .MPR file had a
+			*-- timestamp that we want to copy to the .MPX file. If
+			*-- the .MPX file did not exist earlier, then we might not
+			*-- have a reference to it, so try again to get one now.
+			IF ISNULL( m.loMPXItem )
+				loMPXItem = m.loFolder.ParseName( FORCEEXT( m.lcJustFileName, "MPX" ) )
+			ENDIF
+
+			*-- If we have a reference to the .MPX file, set the modification
+			*-- timestamp of the .MPX file to match the .MNX file.
+			IF NOT ISNULL( m.loMPXItem )
+				loMPXItem.ModifyDate = m.ltFileTimestamp
+			ENDIF
+		ENDIF
+	ELSE
+		*********************************************************************
+		*-- The .MPR file is not tracked in the repository, so it needs to be
+		*-- regenerated and recompiled.
+		*********************************************************************
+		IF NOT ISNULL( laMenuFileList[1] ) ;
+				AND ASCAN( laMenuFileList, FORCEEXT( laTextFileList[m.xx], "MNX" ), 1, -1, 1, 1+2+4 ) > 0
+			*-- The .MNX file is being tracked in the repository, so
+			*-- use its timestamp to check the program files.
+			IF ISNULL( taTimestampList[1] )
+				*-- There are no timestamps available, so just use the
+				*-- current modification date of the .MNX file to check
+				*-- if the program file needs to be regenerated.
+				ltFileTimestamp = m.loMNXItem.ModifyDate
+			ELSE
+				*-- Lookup the timestamp for the current .MNX file.
+				*-- If a timestamp was found for it, store it.
+				lnRow = ASCAN( taTimestampList, FORCEEXT( laTextFileList[m.xx], "MNX" ), 1, -1, 1, 1+2+4+8 )
+				ltFileTimestamp = IIF( m.lnRow > 0, taTimestampList[m.lnRow,2], .NULL. )
+			ENDIF
+		ELSE
+			*-- Only the text file is being tracked in the repository,
+			*-- so use its timestamp to check the program files.
+			IF ISNULL( taTimestampList[1] )
+				*-- There are no timestamps available, so just use the
+				*-- current modification date of the text file to check
+				*-- if the program file needs to be regenerated.
+				loFile = m.loFolder.ParseName( m.lcJustFileName )
+				ltFileTimestamp = IIF( ISNULL( m.loFile ), .NULL., m.loFile.ModifyDate )
+			ELSE
+				*-- Lookup the timestamp for the current text file.
+				*-- If a timestamp was found for it, store it.
+				lnRow = ASCAN( taTimestampList, laTextFileList[m.xx], 1, -1, 1, 1+2+4+8 )
+				ltFileTimestamp = IIF( m.lnRow > 0, taTimestampList[m.lnRow,2], .NULL. )
+			ENDIF
+		ENDIF
+
+		IF ISNULL( m.ltFileTimestamp )
+			*-- Make sure the menu code objects are cleared when there
+			*-- is no timestamp to restore.
+			loMPRItem = .NULL.
+			loMPXItem = .NULL.
+		ELSE
+			*-- Get a shell object reference to the .MPR and .MPX files
+			*-- that will be generated.
+			loMPRItem = m.loFolder.ParseName( FORCEEXT( m.lcJustFileName, "MPR" ) )
+			loMPXItem = m.loFolder.ParseName( FORCEEXT( m.lcJustFileName, "MPX" ) )
+
+			*-- If both the .MPR and .MPX files have the same timestamp
+			*-- as the primary menu file (either the .MNX or text file),
+			*-- assume the menu does not need to be regenerated, and
+			*-- skip it.
+			IF NOT ISNULL( m.loMPRItem ) ;
+					AND NOT ISNULL( m.loMPXItem ) ;
+					AND m.loMPRItem.ModifyDate = m.ltFileTimestamp ;
+					AND m.loMPXItem.ModifyDate = m.ltFileTimestamp
+				LOOP
+			ENDIF
+		ENDIF
+
+		*-- Get the full path of the .MNX file.  Note that FULLPATH()
+		*-- normalizes any forward slashes (/) in the path to backslashes
+		*-- (\).
+		lcFullFileName = FULLPATH( ADDBS( m.lcRepository ) + FORCEEXT( laTextFileList[m.xx], "MNX" ) )
+
+		*-- Attempt to generate the code files for this menu file.
+		llSuccess = This.GenerateMenuCode( @m.toErrorInfo, m.lcFullFileName )
+
+		IF m.llSuccess ;
+				AND NOT ISNULL( m.ltFileTimestamp )
+			*-- The code files were successfully generated, and we have
+			*-- a timestamp, so attempt to set the modification date of
+			*-- the generated menu files.
+			*-- If the .MPR file did not exist earlier, then we might
+			*-- not have a reference to it, so try again to get one now.
+			IF ISNULL( m.loMPRItem )
+				loMPRItem = m.loFolder.ParseName( FORCEEXT( m.lcJustFileName, "MPR" ) )
+			ENDIF
+
+			*-- If we have a reference to the .MPR file, set the modification
+			*-- timestamp of the .MPR file to match the .MNX file.
+			IF NOT ISNULL( m.loMPRItem )
+				loMPRItem.ModifyDate = m.ltFileTimestamp
+			ENDIF
+
+			*-- If the .MPX file did not exist earlier, then we might
+			*-- not have a reference to it, so try again to get one now.
+			IF ISNULL( m.loMPXItem )
+				loMPXItem = m.loFolder.ParseName( FORCEEXT( m.lcJustFileName, "MPX" ) )
+			ENDIF
+
+			*-- If we have a reference to the .MPX file, set the modification
+			*-- timestamp of the .MPX file to match the .MNX file.
+			IF NOT ISNULL( m.loMPXItem )
+				loMPXItem.ModifyDate = m.ltFileTimestamp
+			ENDIF
+		ENDIF	&& m.llSuccess AND NOT ISNULL( m.ltFileTimestamp )
+	ENDIF	&& m.llRecompileMPR
+
+	*-- One of the processes above failed, so abort.
+	IF NOT m.llSuccess
 		EXIT
 	ENDIF
-
-	*{ MJP -- 08/27/2016 04:55:46 PM - Begin
-	IF NOT ISNULL( m.ltFileTimestamp )
-		*-- We have a timestamp, so attempt to set the modification
-		*-- date of the generated menu files.
-		*-- If the .MPR file did not exist earlier, then we might not
-		*-- have a reference to it, so try again to get one now.
-		IF ISNULL( m.loMPRItem )
-			loMPRItem = m.loFolder.ParseName( FORCEEXT( m.lcJustFileName, "MPR" ) )
-		ENDIF
-
-		*-- If we have a reference to the .MPR file, set the modification
-		*-- timestamp of the .MPR file to match the .MNX file.
-		IF NOT ISNULL( m.loMPRItem )
-			loMPRItem.ModifyDate = m.ltFileTimestamp
-		ENDIF
-
-		*-- If the .MPX file did not exist earlier, then we might not
-		*-- have a reference to it, so try again to get one now.
-		IF ISNULL( m.loMPXItem )
-			loMPXItem = m.loFolder.ParseName( FORCEEXT( m.lcJustFileName, "MPX" ) )
-		ENDIF
-
-		*-- If we have a reference to the .MPX file, set the modification
-		*-- timestamp of the .MPX file to match the .MNX file.
-		IF NOT ISNULL( m.loMPXItem )
-			loMPXItem.ModifyDate = m.ltFileTimestamp
-		ENDIF
-	ENDIF
-	*} MJP -- 08/27/2016 04:55:46 PM - End
 ENDFOR
 
 This.ClearMessage()
@@ -4214,7 +4358,8 @@ FUNCTION RecompileRepoProgramFiles
 *!*	This method recompiles all the program files committed to the specified Git repository.  The
 *!*	object code files (.FXP) are typically not committed to the repository, so this ensures that
 *!*	they are in synch with the program files if different versions of the program files have been
-*!*	checked out.
+*!*	checked out.  If an .FXP file is being tracked along with its .PRG file, than that .PRG will
+*!*	not be recompiled.
 
 *!*	PARAMETERS:
 *!*			  toErrorInfo (O) -	A variable passed by reference to store any error info returned from
@@ -4244,7 +4389,8 @@ LPARAMETERS toErrorInfo AS Exception, tcRepository AS String, tcFileListAlias AS
 
 EXTERNAL ARRAY taTimestampList
 
-LOCAL laFileList[1], ;
+LOCAL laFXPFileList[1], ;
+	laPRGFileList[1], ;
 	lcCompiledFileName, ;
 	lcErrorMessages, ;
 	lcFolder, ;
@@ -4282,19 +4428,31 @@ IF NOT m.llSuccess ;
 	RETURN m.llSuccess
 ENDIF
 
+DIMENSION laPRGFileList[1]
+laPRGFileList = .NULL.
+
 *-- Retrieve a list of the program files in this repository folder.
 SELECT GL_FileName ;
 	FROM ( m.tcFileListAlias ) ;
 	WHERE UPPER( RTRIM( GL_FileExtension ) ) == "PRG" ;
-	INTO ARRAY laFileList
+	INTO ARRAY laPRGFileList
 
 *-- There are no program files that are committed to the repository, so
 *-- nothing to do here.
-IF _TALLY = 0
+IF ISNULL( laPRGFileList[1] )
 	RETURN m.llSuccess
 ENDIF
 
-*{ MJP -- 08/27/2016 03:24:51 PM - Begin
+DIMENSION laFXPFileList[1]
+laFXPFileList = .NULL.
+
+*-- Retrieve a list of any compiled program files in this repository
+*-- folder.
+SELECT GL_FileName ;
+	FROM ( m.tcFileListAlias ) ;
+	WHERE UPPER( RTRIM( GL_FileExtension ) ) == "FXP" ;
+	INTO ARRAY laFXPFileList
+
 *-- Make sure the timestamp list parameter is defined as an array.
 IF NOT TYPE( "taTimestampList", 1 ) = "A"
 	DIMENSION taTimestampList[1]
@@ -4309,12 +4467,9 @@ IF ISNULL( taTimestampList[1] ) ;
 	This.ReadRepoTimestampFile( @m.toErrorInfo, m.lcRepository, .NULL., @taTimestampList )
 ENDIF
 
-*-- If there are timestamps available, get a Windows shell object to
-*-- set the modification dates.
-IF NOT ISNULL( taTimestampList[1] )
-	loShell = CREATEOBJECT( "Shell.Application" )
-ENDIF
-*} MJP -- 08/27/2016 03:24:51 PM - End
+*-- Get a Windows shell object to set the modification dates, even if
+*-- a timestamp file is not used.
+loShell = CREATEOBJECT( "Shell.Application" )
 
 *-- Make sure SET NOTIFY is OFF during compiling.  We won't get any
 *-- progress info when compiling very large files, but the compile is
@@ -4324,25 +4479,37 @@ SET NOTIFY OFF
 
 lcErrorMessages = SPACE(0)
 
-lcMessage = "Recompiling " + ALLTRIM( TRANSFORM( ALEN( laFileList, 1 ), "999,999" ) ) ;
+lcMessage = "Recompiling " + ALLTRIM( TRANSFORM( ALEN( laPRGFileList, 1 ), "999,999" ) ) ;
 		+ " program files for repository:" + CHR(13) + m.lcRepository + CHR(13) ;
 		+ "Please wait..."
 This.ShowMessage( m.lcMessage )
 
 TRY
 	*-- Recomile all the program code.
-	FOR xx = 1 TO ALEN( laFileList, 1 )
-		*{ MJP -- 08/27/2016 03:38:29 PM - Begin
-		IF ISNULL( taTimestampList[1] )
-			*-- There are no timestamps available.
-			lnRow = 0
-		ELSE
-			*-- Lookup the timestamp for the current .PRG file.
-			lnRow = ASCAN( taTimestampList, laFileList[m.xx], 1, -1, 1, 1+2+4+8 )
+	FOR xx = 1 TO ALEN( laPRGFileList, 1 )
+		*-- Check if the .FXP for this .PRG file is being tracked in
+		*-- the repository.  If it is, it doesn't need to be recompiled.
+		IF NOT ISNULL( laFXPFileList[1] ) ;
+				AND ASCAN( laFXPFileList, FORCEEXT( laPRGFileList[m.xx], "FXP" ), 1, -1, 1, 1+2+4 ) > 0
+			LOOP
 		ENDIF
 
-		*-- If a timestamp was found for the .PRG file, store it.
-		ltFileTimestamp = IIF( m.lnRow > 0, taTimestampList[m.lnRow,2], .NULL. )
+		*-- Get the full folder name and normalize it to backslashes.
+		lcFolder = ADDBS( m.lcRepository ) + JUSTPATH( CHRTRAN( laPRGFileList[m.xx], "/", "\" ) )
+		loFolder = m.loShell.NameSpace( m.lcFolder )
+
+		IF ISNULL( taTimestampList[1] )
+			*-- There are no timestamps available.  Lookup the modification
+			*-- date of the .PRG file, and use that.
+			loFolderItem = m.loFolder.ParseName( JUSTFNAME( laPRGFileList[m.xx] ) )
+			ltFileTimestamp = IIF( ISNULL( m.loFolderItem ), .NULL., m.loFolderItem.ModifyDate )
+		ELSE
+			*-- Lookup the timestamp for the current .PRG file.  If a
+			*-- timestamp was found, store it.
+			lnRow = ASCAN( taTimestampList, laPRGFileList[m.xx], 1, -1, 1, 1+2+4+8 )
+			ltFileTimestamp = IIF( m.lnRow > 0, taTimestampList[m.lnRow,2], .NULL. )
+		ENDIF
+
 		IF ISNULL( ltFileTimestamp )
 			*-- Make sure the folder item object is cleared when there
 			*-- is no timestamp to restore.
@@ -4350,13 +4517,9 @@ TRY
 		ELSE
 			*-- There is a timestamp to restore, so get the name of the
 			*-- .FXP file that will be created on recomiling.
-			lcCompiledFileName = FORCEEXT( JUSTFNAME( laFileList[m.xx] ), "FXP" )
-
-			*-- Get the full folder name and normalize it to backslashes.
-			lcFolder = ADDBS( m.lcRepository ) + JUSTPATH( CHRTRAN( laFileList[m.xx], "/", "\" ) )
+			lcCompiledFileName = FORCEEXT( JUSTFNAME( laPRGFileList[m.xx] ), "FXP" )
 
 			*-- Get a shell object reference to the .FXP file.
-			loFolder = m.loShell.NameSpace( m.lcFolder )
 			loFolderItem = m.loFolder.ParseName( m.lcCompiledFileName )
 
 			*-- If the timestamp of the .FXP file exactly matches the
@@ -4367,17 +4530,15 @@ TRY
 				LOOP
 			ENDIF
 		ENDIF
-		*} MJP -- 08/27/2016 03:38:29 PM - End
 
 		*-- Get the full path of the current file.  Note that FULLPATH()
 		*-- normalizes any forward slashes (/) in the path to backslashes
 		*-- (\).
-		lcFullFileName = FULLPATH( ADDBS( m.lcRepository ) + laFileList[m.xx] )
+		lcFullFileName = FULLPATH( ADDBS( m.lcRepository ) + laPRGFileList[m.xx] )
 
-		*-- Attempt to recompile this program.
-		*-- MJP -- 07/09/2015 11:52:38 AM
-		*-- Trap individual compile errors, but allow processing to
-		*-- continue so that as many files as possible will be compiled.
+		*-- Attempt to recompile this program.  Trap individual compile
+		*-- errors, but allow processing to continue so that as many
+		*-- files as possible will be compiled.
 		TRY
 			COMPILE ( m.lcFullFileName )
 
@@ -4390,7 +4551,6 @@ TRY
 					+ "   File: " + m.lcFullFileName
 		ENDTRY
 
-		*{ MJP -- 08/27/2016 03:57:08 PM - Begin
 		IF NOT ISNULL( m.ltFileTimestamp )
 			*-- We have a timestamp, so attempt to set the modification
 			*-- date of the .FXP file.
@@ -4406,7 +4566,6 @@ TRY
 				loFolderItem.ModifyDate = m.ltFileTimestamp
 			ENDIF
 		ENDIF
-		*} MJP -- 08/27/2016 03:57:08 PM - End
 	ENDFOR
 
 	*-- If any of the compiles failed, generate a message which includes
