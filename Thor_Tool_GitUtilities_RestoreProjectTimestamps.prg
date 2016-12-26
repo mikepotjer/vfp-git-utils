@@ -33,7 +33,7 @@ This tool requires Git for Windows or Mercurial for Windows and some Thor Reposi
 		.Sort		   = 0 && the sort order for all items from the same Source, Category and Sub-Category
 
 		* For public tools, such as PEM Editor, etc.
-		.Version	   = '2016.06.24' && e.g., 'Version 7, May 18, 2011'
+		.Version	   = '2016.12.09' && e.g., 'Version 7, May 18, 2011'
 		.Author        = 'Mike Potjer'
 		*!* .Link          = 'https://github.com/mikepotjer/vfp-git-utils'	&& 'http://www.optimalinternet.com/' && link to a page for this tool
 		.Link          = 'https://bitbucket.org/mikepotjer/vfp-git-utils'	&& 'http://www.optimalinternet.com/' && link to a page for this tool
@@ -61,11 +61,12 @@ RETURN
 PROCEDURE ToolCode
 LPARAMETERS lxParam1
 
-LOCAL llSuccess, ;
-	loScope, ;
-	loScopeForm AS FrmScopeFinder OF "C:\Work\VFP\Shared\Tools\Thor\Tools\Procs\Thor_Proc_ScopeProcessor.vcx", ;
+LOCAL lcRepository, ;
+	llSuccess, ;
 	loErrorInfo AS Exception, ;
-	loGitUtilities AS cusGitUtilities OF Thor_Proc_GitUtilities.PRG
+	loGitUtilities AS cusGitUtilities OF Thor_Proc_GitUtilities.PRG, ;
+	loScope, ;
+	loScopeForm AS FrmScopeFinder OF "C:\Work\VFP\Shared\Tools\Thor\Tools\Procs\Thor_Proc_ScopeProcessor.vcx"
 
 llSuccess = .T.
 
@@ -105,11 +106,33 @@ ENDCASE
 WAIT CLEAR
 
 *-- Display the results.
-IF m.llSuccess
-	MESSAGEBOX( "Timestamps successfully updated for" + CHR(13) + m.loScope.cScope, 64, TOOL_PROMPT, 3000 )
-ELSE
-	MESSAGEBOX( m.loErrorInfo.Message, 16, TOOL_PROMPT )
-ENDIF
+DO CASE
+	CASE m.llSuccess
+		MESSAGEBOX( "Timestamps successfully updated for" + CHR(13) + m.loScope.cScope, ;
+				64, TOOL_PROMPT, 3000 )
+
+	CASE TYPE( "m.loScope.lUserCancelled" ) = "L" ;
+			AND m.loScope.lUserCancelled
+		*-- The process failed because the user cancelled, set a timeout
+		*-- so the user doesn't have to close the message dialog.
+		MESSAGEBOX( m.loErrorInfo.Message, 16, TOOL_PROMPT, 2000 )
+
+	CASE VARTYPE( m.loGitUtilities ) = "O"
+		*-- If the Git utilities object is available, use that to report
+		*-- the error, since it gives you more detail.
+		lcRepository = .NULL.
+		IF TYPE( "m.loScope.cScope" ) = "C" ;
+				AND NOT EMPTY( NVL( m.loScope.cScope, SPACE(0) ) ) ;
+				AND NOT m.loScope.lScopeIsProject
+			lcRepository = m.loScope.cScope
+		ENDIF
+
+		loGitUtilities.ShowError( m.loErrorInfo, m.lcRepository )
+
+	OTHERWISE
+		*-- No goodies available, so just report the error message.
+		MESSAGEBOX( m.loErrorInfo.Message, 16, TOOL_PROMPT )
+ENDCASE
 
 *-- Provide a return value that can be used if you call this process
 *-- from some other code.
