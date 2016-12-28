@@ -64,7 +64,7 @@ will appear in the Thor tools menus under `Applications > Git-Hg Utilities`.
 
 Occasionally I may make new features available via a beta version of Git and Utilities before
 releasing them in the regular version.  If you would like to try the beta version, you can manually
-add it to the **Check for Updates** list by [downloading][Git-tools-beta] the file
+add it to the **Check for Updates** list by [downloading the file][Git-tools-beta]
 `Thor_Update_Git-Utils-Beta.PRG`, and saving it to your `Thor\Tools\Updates\My Updates` folder.
 This folder can be easily accessed from the Thor menu by selecting `Thor > More > Open Folder > Tools`.
 From there you can navigate to `Updates\My Updates`.  You can then run **Check for Updates**, and

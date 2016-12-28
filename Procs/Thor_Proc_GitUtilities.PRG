@@ -299,13 +299,13 @@ FUNCTION ExecuteCommand
 *********************************************************************
 LPARAMETERS toErrorInfo AS Exception, tcRepository AS String, tcCommand AS String, tcOutput AS String
 
-LOCAL llSuccess, ;
-	loShell AS WScript.Shell, ;
-	loExec AS WSCRIPT.WshExec, ;
-	lcCommand, ;
+LOCAL lcCommand, ;
+	lcDefaultPath, ;
 	lcOutputFile, ;
+	llSuccess, ;
 	lnReturnError, ;
-	lcDefaultPath
+	loExec AS WSCRIPT.WshExec, ;
+	loShell AS WScript.Shell
 
 llSuccess = .T.
 tcOutput = SPACE(0)
@@ -533,15 +533,15 @@ LPARAMETERS toErrorInfo AS Exception, tcRepository AS String, taFileDateList
 
 EXTERNAL ARRAY taFileDateList
 
-LOCAL llSuccess, ;
-	laFileList[1], ;
-	lnFileCount, ;
+LOCAL laFileList[1], ;
+	lcFileName, ;
+	lcFolder, ;
 	lcRepository, ;
-	loShell AS Shell.Shell, ;
+	llSuccess, ;
+	lnFileCount, ;
 	loFolder AS SHELL.Folder, ;
 	loFolderItem AS SHELL.FolderItem, ;
-	lcFolder, ;
-	lcFileName, ;
+	loShell AS Shell.Shell, ;
 	xx
 
 *-- Get the list of files.
@@ -1050,8 +1050,8 @@ FUNCTION GetRepoType
 *********************************************************************
 LPARAMETERS tcRepository AS String
 
-LOCAL lcRepository, ;
-	lcRepoType
+LOCAL lcRepoType, ;
+	lcRepository
 
 lcRepoType = SPACE(0)
 lcRepository = This.GetRepositoryPath( m.tcRepository )
@@ -1155,10 +1155,10 @@ FUNCTION GetRepoStatistics
 *********************************************************************
 LPARAMETERS toErrorInfo AS Exception, tcRepository AS String
 
-LOCAL loGitStats, ;
+LOCAL lcAggregateAlias, ;
 	lcStatusAlias, ;
-	lcAggregateAlias, ;
-	lnWorkArea
+	lnWorkArea, ;
+	loGitStats
 
 lcStatusAlias = "C_GitRepoStatus" + SYS(2015)
 lcAggregateAlias = "C_GitRepoStatistics" + SYS(2015)
@@ -1235,16 +1235,16 @@ FUNCTION FetchReposInProject
 *********************************************************************
 LPARAMETERS toErrorInfo AS Exception, tcProjectName AS String, tcCursorName AS String
 
-LOCAL llSuccess, ;
-	lcProjectName, ;
+LOCAL lcBranchName, ;
+	lcCommand, ;
+	lcFolderPath, ;
 	lcProjectAlias, ;
 	lcProjectFoldersAlias, ;
-	lcSQL, ;
-	lcFolderPath, ;
+	lcProjectName, ;
 	lcRepoFolder, ;
 	lcRepoType, ;
-	lcCommand, ;
-	lcBranchName, ;
+	lcSQL, ;
+	llSuccess, ;
 	loRepoStatistics
 
 llSuccess = .T.
@@ -1465,9 +1465,14 @@ LOCAL lcChangesAlias, ;
 	llHasChanges, ;
 	llSuccess, ;
 	lnFileCount, ;
-	lnFileNumber
+	lnFileNumber, ;
+	loProjects
 
 llSuccess = .T.
+
+*-- MJP -- 12/27/2016 10:29:52 AM
+*-- Make sure all projects are closed before processing.
+loProjects = CREATEOBJECT( "colPushPopProjects" )
 
 *-- Retrieve a list of VFP binary file changes for the repository.
 DO CASE
@@ -1853,9 +1858,12 @@ FUNCTION BinaryToTextProject
 LPARAMETERS toErrorInfo AS Exception, tcProjectName AS String, tlCleanupModified AS Boolean
 
 LOCAL lcRepoListAlias, ;
-	llSuccess
+	llBin2TxtSelectedProject, ;
+	llSuccess, ;
+	loProjects AS "colPushPopProjects"
 
 llSuccess = .T.
+llBin2TxtSelectedProject = .F.
 
 *-- Get a list of the repositories for the project.
 DO CASE
@@ -1875,14 +1883,35 @@ DO CASE
 		*-- be processed with the rest of the files in the repo.
 	*} MJP -- 06/23/2016 12:00:20 PM - End
 
-	*-- MJP -- 02/05/2015 05:02:01 PM
+	*!* MJP -- Removed 12/27/2016 10:36:56
+	*!* CASE NOT This.BinaryToTextProjectFile( @m.toErrorInfo, m.tcProjectName )
+	*!* 	*-- The text file for the project itself could not be updated,
+	*!* 	*-- so abort.
+	*!* 	RETURN .F.
+
+	OTHERWISE
+		*-- There is a list of repositories to process.
+		*-- MJP -- 12/27/2016 10:37:27 AM
+		*-- The project file isn't in the repository, so the text file
+		*-- needs to be generated.
+		llBin2TxtSelectedProject = .T.
+ENDCASE
+
+*-- Save and close all open projects.
+loProjects = CREATEOBJECT( "colPushPopProjects" )
+
+DO CASE
+	CASE NOT m.llBin2TxtSelectedProject
+		*-- The text file for the project will be generated with the
+		*-- rest of the files, so nothing to do here.
+
 	CASE NOT This.BinaryToTextProjectFile( @m.toErrorInfo, m.tcProjectName )
 		*-- The text file for the project itself could not be updated,
 		*-- so abort.
 		RETURN .F.
 
 	OTHERWISE
-		*-- There is a list of repositories to process.
+		*-- The text file was successfully generated.
 ENDCASE
 
 *-- For each repository represented in the project, generate text files
@@ -1934,7 +1963,6 @@ LOCAL laBinaryFiles[1], ;
 	lcRepository, ;
 	lcTextExtension, ;
 	lcTextExtensionsAlias, ;
-	llProjectOpen, ;
 	llSuccess, ;
 	llTimestampsMatch, ;
 	lnFileCount, ;
@@ -2116,14 +2144,17 @@ SCAN
 		*-- (\).
 		lcFullFileName = FULLPATH( ADDBS( m.lcRepository ) + FORCEEXT( laTextFiles[m.xx], m.lcBinaryExtension ) )
 
-		llProjectOpen = .F.
+		*!* MJP -- Removed 12/27/2016 10:55:05
+		*-- The projects should all be closed now before this method
+		*-- is called.
+		*!* llProjectOpen = .F.
 
-		*-- If a project text file is being generated, check if the
-		*-- specified project is open, because we can't generate the
-		*-- text file if it is.
-		IF m.lcBinaryExtension == "PJX"
-			llProjectOpen = This.CloseProject( m.lcFullFileName )
-		ENDIF
+		*!* *-- If a project text file is being generated, check if the
+		*!* *-- specified project is open, because we can't generate the
+		*!* *-- text file if it is.
+		*!* IF m.lcBinaryExtension == "PJX"
+		*!* 	llProjectOpen = This.CloseProject( m.lcFullFileName )
+		*!* ENDIF
 
 		*-- Attempt to generate the text file.
 		IF NOT This.ConvertVFPFile( @m.toErrorInfo, m.lcFullFileName, m.lcRepository )
@@ -2166,11 +2197,12 @@ SCAN
 			ENDFOR
 		ENDIF
 
-		*-- If project text file was generated and the project was
-		*-- open earlier, re-open it.
-		IF m.llProjectOpen
-			MODIFY PROJECT ( FORCEEXT( m.lcFullFileName, "PJX" ) ) NOWAIT
-		ENDIF
+		*!* MJP -- Removed 12/27/2016 10:56:02
+		*!* *-- If project text file was generated and the project was
+		*!* *-- open earlier, re-open it.
+		*!* IF m.llProjectOpen
+		*!* 	MODIFY PROJECT ( FORCEEXT( m.lcFullFileName, "PJX" ) ) NOWAIT
+		*!* ENDIF
 	ENDFOR
 ENDSCAN
 
@@ -2365,6 +2397,10 @@ llSuccess = .T.
 
 *-- Check if the specified project is open, because we can't generate
 *-- the text file if it is.
+*-- MJP -- 12/27/2016 11:16:57 AM
+*-- Ordinarily, all projects will now be closed before this method is
+*-- called, but this method is not protected, so it could conceivably
+*-- be called in a context where the project file is still open.
 llProjectOpen = This.CloseProject( m.lcProjectName )
 
 *-- Generate the text file for the project.
@@ -3315,7 +3351,8 @@ FUNCTION PostCheckoutProcessProject
 LPARAMETERS toErrorInfo AS Exception, tcProjectName AS String
 
 LOCAL lcRepoListAlias, ;
-	llSuccess
+	llSuccess, ;
+	loProjects
 
 llSuccess = .T.
 
@@ -3334,6 +3371,10 @@ DO CASE
 	OTHERWISE
 		*-- There is a list of repositories to process.
 ENDCASE
+
+*-- MJP -- 12/27/2016 11:03:30 AM
+*-- Make sure any open projects are closed before processing files.
+loProjects = CREATEOBJECT( "colPushPopProjects" )
 
 *-- Process each repository represented in the project.
 SELECT ( m.lcRepoListAlias )
@@ -3371,7 +3412,13 @@ LPARAMETERS toErrorInfo AS Exception, tcRepository AS String
 
 LOCAL laTimestampList[1], ;
 	lcFileListAlias, ;
-	llSuccess
+	llSuccess, ;
+	loProjects
+
+*-- MJP -- 12/27/2016 11:05:28 AM
+*-- If this method was called directly, make sure all open projects
+*-- are closed before processing.
+loProjects = CREATEOBJECT( "colPushPopProjects" )
 
 *-- Make sure we have a unique name of the file list cursor, and that
 *-- there are no prior instances open with with name.
@@ -3711,7 +3758,6 @@ LOCAL laBinaryFileList[1], ;
 	lcTextExtension, ;
 	lcTextExtensionsAlias, ;
 	lcVFPExtensionProcessingOrder, ;
-	llProjectOpen, ;
 	llSuccess, ;
 	llTimestampsMatch, ;
 	lnBinaryTypeCount, ;
@@ -3720,12 +3766,18 @@ LOCAL laBinaryFileList[1], ;
 	lnRow, ;
 	loFile AS SHELL.FolderItem, ;
 	loFolder AS SHELL.Folder, ;
+	loProjects, ;
 	loShell AS Shell.Shell, ;
 	ltFileTimestamp, ;
 	xx, ;
 	yy
 
 EXTERNAL ARRAY taTimestampList
+
+*-- MJP -- 12/27/2016 11:12:57 AM
+*-- Since this method isn't protected, and could be called directly,
+*-- make sure all projects are closed before processing.
+loProjects = CREATEOBJECT( "colPushPopProjects" )
 
 *-- Make sure we have a repository name.
 lcRepository = This.GetRepositoryPath( m.tcRepository )
@@ -3950,14 +4002,17 @@ FOR lnFileType = 1 TO m.lnBinaryTypeCount
 		*-- collection below.
 		lcFullFileName = FULLPATH( ADDBS( m.lcRepository ) + laTextFileList[m.xx] )
 
-		llProjectOpen = .F.
+		*!* MJP -- Removed 12/27/2016 11:09:28
+		*-- All projects should be closed before this method is called,
+		*-- so this code isn't needed.
+		*!* llProjectOpen = .F.
 
-		*-- If project files are being generated, check if the specified
-		*-- project is open, because we can't regenerate the project
-		*-- file if it is.
-		IF m.lcBinaryExtension == "PJX"
-			llProjectOpen = This.CloseProject( FORCEEXT( m.lcFullFileName, "PJX" ) )
-		ENDIF
+		*!* *-- If project files are being generated, check if the specified
+		*!* *-- project is open, because we can't regenerate the project
+		*!* *-- file if it is.
+		*!* IF m.lcBinaryExtension == "PJX"
+		*!* 	llProjectOpen = This.CloseProject( FORCEEXT( m.lcFullFileName, "PJX" ) )
+		*!* ENDIF
 
 		*-- Attempt to regenerate the binary files.
 		IF NOT This.ConvertVFPFile( @m.toErrorInfo, m.lcFullFileName, m.lcRepository, .T. )
@@ -3987,11 +4042,12 @@ FOR lnFileType = 1 TO m.lnBinaryTypeCount
 			ENDFOR
 		ENDIF
 
-		*-- If project files were generated and the project was open,
-		*-- re-open it.
-		IF m.llProjectOpen
-			MODIFY PROJECT ( FORCEEXT( m.lcFullFileName, "PJX" ) ) NOWAIT
-		ENDIF
+		*!* MJP -- Removed 12/27/2016 11:10:27
+		*!* *-- If project files were generated and the project was open,
+		*!* *-- re-open it.
+		*!* IF m.llProjectOpen
+		*!* 	MODIFY PROJECT ( FORCEEXT( m.lcFullFileName, "PJX" ) ) NOWAIT
+		*!* ENDIF
 	ENDFOR	&& xx = 1 TO ALEN( laTextFileList, 1 )
 
 	*-- If something failed in the file processing, abort the rest of
@@ -6502,6 +6558,190 @@ IF m.llSuccess
 ELSE
 	This.ShowError( m.loErrorInfo )
 ENDIF
+
+ENDPROC
+
+ENDDEFINE
+
+
+*********************************************************************
+DEFINE CLASS colPushPopProjects AS Collection
+*********************************************************************
+
+#IF .F.
+Class:  Thor_Proc_GitUtilities.PRG/colPushPopProjects
+
+DESCRIPTION:
+	This class closes all open projects on instantiation, and opens them all again on release.
+
+USAGE:
+	LOCAL loProjects
+
+	loProjects = CREATEOBJECT( "colPushPopProjects" )
+
+	*-- Do stuff
+
+	loProjects = .NULL.	&& or let the variable go out of scope
+
+METHODS THAT HAVE BEEN ADDED/MODIFIED:
+======================================
+
+PROPERTIES THAT HAVE BEEN ADDED/MODIFIED:
+=========================================
+
+MEMBER OBJECTS THAT HAVE BEEN ADDED/MODIFIED:
+=============================================
+
+#ENDIF
+
+*-- This property stores the name of the project that was the active
+*-- project when this class was instantiated, so that we can make it
+*-- the active project again on release.
+icActiveProject = ""
+
+*********************************************************************
+PROCEDURE Init
+*********************************************************************
+LOCAL xx
+
+IF _VFP.Projects.Count > 0
+	*-- There are projects open.  Store the name of the active project
+	*-- before doing anything else.
+	This.icActiveProject = _VFP.ActiveProject.Name
+
+	*-- Store the names of all the open projects.
+	FOR xx = 1 TO _VFP.Projects.Count
+		This.Add( _VFP.Projects.Item(m.xx).Name )
+	ENDFOR
+
+	*-- Close all the projects.
+	This.CloseAllProjects()
+ENDIF
+
+ENDPROC
+
+*********************************************************************
+PROCEDURE Destroy
+*********************************************************************
+*-- Attempt to reopen any projects that were open when this class was
+*-- instantiated.
+This.OpenAllProjects()
+
+ENDPROC
+
+*********************************************************************
+PROCEDURE CloseProject
+
+*!*	This method attempts to close a specific VFP project file.
+
+*!*	PARAMETERS:
+*!*		tcProjectFileName (R) -	The full path and file name of the project to close.
+
+*!*	RETURNS: Nothing
+*********************************************************************
+LPARAMETERS tcProjectFileName AS String
+
+LOCAL loProject AS VisualFoxpro.IFoxProject
+
+*-- Check if there are any open projects before attempting to close
+*-- one.
+IF _VFP.Projects.Count = 0
+	RETURN
+ENDIF
+
+TRY
+	*-- Attempt to get a reference to the project object.
+	loProject = _VFP.Projects.Item( m.tcProjectFileName )
+CATCH
+	loProject = .NULL.
+ENDTRY
+
+*-- If the project was open, close it.
+IF NOT ISNULL( m.loProject )
+	loProject.Close()
+	loProject = .NULL.
+ENDIF
+
+ENDPROC
+
+*********************************************************************
+PROCEDURE CloseAllProjects
+
+*!*	This method attempts to close all project files that are currently open.
+
+*!*	PARAMETERS: None
+
+*!*	RETURNS: Nothing
+*********************************************************************
+LOCAL lcProjectName, ;
+	xx
+
+*-- Check if there are any projects open, otherwise there is nothing
+*-- to do.
+IF _VFP.Projects.Count = 0
+	RETURN
+ENDIF
+
+*-- Go through the projects collection and close them all.  We need to
+*-- work our way from the last item in the collection to the first,
+*-- because the collection count will change as each item is closed.
+FOR xx = _VFP.Projects.Count TO 1 STEP -1
+	lcProjectName = _VFP.Projects.Item(m.xx).Name
+	This.CloseProject( m.lcProjectName )
+ENDFOR
+
+ENDPROC
+
+*********************************************************************
+PROCEDURE OpenProject
+
+*!*	This method attempts to open a specified project file.
+
+*!*	PARAMETERS:
+*!*		tcProjectFileName (R) -	The full path and file name of the project to open.
+
+*!*	RETURNS: Nothing
+*********************************************************************
+LPARAMETERS tcProjectFileName AS String
+
+*-- Attempt to open the specified project.  Use NOWAIT so that processing
+*-- can continue on after the project is open.
+TRY
+	MODIFY PROJECT ( m.tcProjectFileName ) NOWAIT
+CATCH
+ENDTRY
+
+ENDPROC
+
+*********************************************************************
+PROCEDURE OpenAllProjects
+
+*!*	This method attempts to re-open all projects that were originally open when this class was
+*!*	instantiated.
+
+*!*	PARAMETERS: None
+
+*!*	RETURNS: Nothing
+*********************************************************************
+LOCAL lcProjectName, ;
+	xx
+
+*-- Check if this class has any items stored, otherwise there is nothing
+*-- to do here.
+IF This.Count = 0
+	RETURN
+ENDIF
+
+*-- Attempt to open all the projects whose names were stored when the
+*-- class was instantiated.
+FOR xx = 1 TO This.Count
+	lcProjectName = This.Item(m.xx)
+	This.OpenProject( m.lcProjectName )
+ENDFOR
+
+*-- Opening a project that is already open will make it the active
+*-- project.
+This.OpenProject( This.icActiveProject )
 
 ENDPROC
 
