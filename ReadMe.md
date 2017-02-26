@@ -6,6 +6,8 @@ folders to the files retrieved from the DVCS, and prepare files to be committed 
 repositories.  
 **NOTE:** Mercurial support was added with the 2016-07-23 release.  
 
+Version history is available in the [GitUtilitiesVersionFile.txt][Git-tools-history] file.  
+
 In addition to being able to watch the GitHub and BitBucket repositories for changes to these
 utilities, you can also check for notices posted on the [FoxProThor Google group]
 [FoxProThor-Google-group].  
@@ -271,6 +273,7 @@ code like the following into the plug-in .PRG:
   ENDIF
 ```
 
+[Git-tools-history]: https://bitbucket.org/mikepotjer/vfp-git-utils/src/master/GitUtilitiesVersionFile.txt
 [FoxProThor-Google-group]: https://groups.google.com/forum/?fromgroups#!forum/FoxProThor
 [Thor-homepage]: http://vfpx.codeplex.com/wikipage?title=Thor
 [FoxBin2Prg-homepage]: http://vfpx.codeplex.com/wikipage?title=FoxBin2Prg
@@ -278,4 +281,3 @@ code like the following into the plug-in .PRG:
 [Mercurial-Windows-download]: https://www.mercurial-scm.org/downloads
 [Git-setup-guide]: https://drive.google.com/file/d/0B1GXcfuc1fBubFpUS2VmSVNpUEk/view?usp=sharing
 [Borup-whitepapers]: http://www.ita-software.com/foxpage.aspx
-[Git-tools-beta]: https://bitbucket.org/mikepotjer/vfp-git-utils/downloads/Thor_Update_Git-Utils-Beta.prg
