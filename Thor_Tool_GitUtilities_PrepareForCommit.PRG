@@ -20,7 +20,8 @@ IF PCOUNT() = 1 ;
 
 		* Optional
 		Text to .Description NoShow && a description for the tool
-Prepares all VFP binary files in a selected repository, or in the Git or Mercurial repositories of the selected project, for commit.  Binary files that have changed due to a recompile, but not because of a code change, are also reset.
+Prepares all VFP binary files in a selected repository, or in the Git or Mercurial repositories of the selected project, for commit, including regenerating text files as needed.
+Whenever VFP binary files are being tracked in a repository and have changed due to a recompile, but not because of a code change, those binaries are reset.
 
 NOTE: Make sure that any VFP binary files which have changed are closed before running this process.  This process can "hang" if it attempts to replace a file that is still open.
 
@@ -32,10 +33,10 @@ This tool requires Git for Windows or Mercurial for Windows, FoxBin2Prg, and som
 		* These are used to group and sort tools when they are displayed in menus or the Thor form
 		.Source		   = 'MJP' && where did this tool come from?  Your own initials, for instance
 		.Category      = 'Applications|Git-Hg Utilities' && allows categorization for tools with the same source
-		.Sort		   = 0 && the sort order for all items from the same Source, Category and Sub-Category
+		.Sort		   = 1 && the sort order for all items from the same Source, Category and Sub-Category
 
 		* For public tools, such as PEM Editor, etc.
-		.Version	   = '2016.06.24' && e.g., 'Version 7, May 18, 2011'
+		.Version	   = '2016.12.09' && e.g., 'Version 7, May 18, 2011'
 		.Author        = 'Mike Potjer'
 		*!* .Link          = 'https://github.com/mikepotjer/vfp-git-utils'	&& 'http://www.optimalinternet.com/' && link to a page for this tool
 		.Link          = 'https://bitbucket.org/mikepotjer/vfp-git-utils'	&& 'http://www.optimalinternet.com/' && link to a page for this tool
@@ -63,10 +64,11 @@ RETURN
 PROCEDURE ToolCode
 LPARAMETERS lxParam1
 
-LOCAL llSuccess, ;
-	loScope, ;
+LOCAL lcRepository, ;
+	llSuccess, ;
 	loErrorInfo AS Exception, ;
-	loGitUtilities AS cusGitUtilities OF Procs\Thor_Proc_GitUtilities.PRG
+	loGitUtilities AS cusGitUtilities OF Procs\Thor_Proc_GitUtilities.PRG, ;
+	loScope
 
 llSuccess = .T.
 
@@ -106,12 +108,33 @@ ENDCASE
 WAIT CLEAR
 
 *-- Display the results.
-IF m.llSuccess
-	MESSAGEBOX( "Preparation for commit was successful for" + CHR(13) + m.loScope.cScope, ;
-			64, TOOL_PROMPT, 3000 )
-ELSE
-	MESSAGEBOX( m.loErrorInfo.Message, 16, TOOL_PROMPT )
-ENDIF
+DO CASE
+	CASE m.llSuccess
+		MESSAGEBOX( "Preparation for commit was successful for" + CHR(13) + m.loScope.cScope, ;
+				64, TOOL_PROMPT, 3000 )
+
+	CASE TYPE( "m.loScope.lUserCancelled" ) = "L" ;
+			AND m.loScope.lUserCancelled
+		*-- The process failed because the user cancelled, set a timeout
+		*-- so the user doesn't have to close the message dialog.
+		MESSAGEBOX( m.loErrorInfo.Message, 16, TOOL_PROMPT, 2000 )
+
+	CASE VARTYPE( m.loGitUtilities ) = "O"
+		*-- If the Git utilities object is available, use that to report
+		*-- the error, since it gives you more detail.
+		lcRepository = .NULL.
+		IF TYPE( "m.loScope.cScope" ) = "C" ;
+				AND NOT EMPTY( NVL( m.loScope.cScope, SPACE(0) ) ) ;
+				AND NOT m.loScope.lScopeIsProject
+			lcRepository = m.loScope.cScope
+		ENDIF
+
+		loGitUtilities.ShowError( m.loErrorInfo, m.lcRepository )
+
+	OTHERWISE
+		*-- No goodies available, so just report the error message.
+		MESSAGEBOX( m.loErrorInfo.Message, 16, TOOL_PROMPT )
+ENDCASE
 
 *-- Provide a return value that can be used if you call this process
 *-- from some other code.

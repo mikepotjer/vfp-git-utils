@@ -1,7 +1,7 @@
 LPARAMETERS lxParam1
 
 #INCLUDE Procs\Thor_Proc_GitUtilities.h
-#DEFINE TOOL_PROMPT		"Post-checkout file synchronization"
+#DEFINE TOOL_PROMPT		"Post-checkout/update file synchronization"
 
 ****************************************************************
 ****************************************************************
@@ -16,17 +16,18 @@ IF PCOUNT() = 1 ;
 
 		* Required
 		.Prompt		   = TOOL_PROMPT && used when tool appears in a menu
-		.Summary       = 'Synchronize uncommitted files in a VFP project or repository with files committed to a Git or Mercurial repository'
+		.Summary       = 'Synchronize uncommitted VFP files in the working folders of a Git or Mercurial repository with the files committed to the repository'
 
 		* Optional
 		Text to .Description NoShow && a description for the tool
-Synchronizes files that are not part of a repository with their counterparts that are committed to a selected repository, or in the Git/Mercurial repositories of the selected project.  This includes:
+Synchronizes files that are not part of a repository with their counterparts that are committed to a selected repository, or in the Git/Mercurial repositories of a selected VFP project.  This includes:
 
-  - Regenerating .PJX files from the text files
+  - Regenerating VFP binary files from the text files (only when the binaries are not in the repository)
   - Regenerating and compiling menu code from the binary menu files (.MNX)
   - Recompiling program files.
+  - Restoring file modification dates from a timestamp file (if applicable)
 
-This tool would typically be run after performing a Git checkout or Hg revert of a different branch of some repository containing VFP files.
+This tool would typically be run after performing a Git checkout or Hg update, a pull, merge, rebase, or any action that updates the files in the working folders with different versions from a repository.
 
 This tool requires Git for Windows or Mercurial for Windows, FoxBin2Prg, and some Thor Repository tools.
 		EndText 
@@ -36,10 +37,10 @@ This tool requires Git for Windows or Mercurial for Windows, FoxBin2Prg, and som
 		* These are used to group and sort tools when they are displayed in menus or the Thor form
 		.Source		   = 'MJP' && where did this tool come from?  Your own initials, for instance
 		.Category      = 'Applications|Git-Hg Utilities' && allows categorization for tools with the same source
-		.Sort		   = 0 && the sort order for all items from the same Source, Category and Sub-Category
+		.Sort		   = 2 && the sort order for all items from the same Source, Category and Sub-Category
 
 		* For public tools, such as PEM Editor, etc.
-		.Version	   = '2016.06.24' && e.g., 'Version 7, May 18, 2011'
+		.Version	   = '2016.12.09' && e.g., 'Version 7, May 18, 2011'
 		.Author        = 'Mike Potjer'
 		*!* .Link          = 'https://github.com/mikepotjer/vfp-git-utils'	&& 'http://www.optimalinternet.com/' && link to a page for this tool
 		.Link          = 'https://bitbucket.org/mikepotjer/vfp-git-utils'	&& 'http://www.optimalinternet.com/' && link to a page for this tool
@@ -69,11 +70,12 @@ RETURN
 PROCEDURE ToolCode
 LPARAMETERS lxParam1
 
-LOCAL llSuccess, ;
-	loScope, ;
-	loScopeForm AS FrmScopeFinder OF "C:\Work\VFP\Shared\Tools\Thor\Tools\Procs\Thor_Proc_ScopeProcessor.vcx", ;
+LOCAL lcRepository, ;
+	llSuccess, ;
 	loErrorInfo AS Exception, ;
-	loGitUtilities AS cusGitUtilities OF Thor_Proc_GitUtilities.PRG
+	loGitUtilities AS cusGitUtilities OF Thor_Proc_GitUtilities.PRG, ;
+	loScope, ;
+	loScopeForm AS FrmScopeFinder OF "C:\Work\VFP\Shared\Tools\Thor\Tools\Procs\Thor_Proc_ScopeProcessor.vcx"
 
 llSuccess = .T.
 
@@ -113,12 +115,33 @@ ENDCASE
 WAIT CLEAR
 
 *-- Display the results.
-IF m.llSuccess
-	MESSAGEBOX( "Post-checkout file synchronization was successful for" + CHR(13) + m.loScope.cScope, ;
-			64, TOOL_PROMPT, 3000 )
-ELSE
-	MESSAGEBOX( m.loErrorInfo.Message, 16, TOOL_PROMPT )
-ENDIF
+DO CASE
+	CASE m.llSuccess
+		MESSAGEBOX( "Post-checkout/update file synchronization was successful for" + CHR(13) ;
+				+ m.loScope.cScope, 64, TOOL_PROMPT, 3000 )
+
+	CASE TYPE( "m.loScope.lUserCancelled" ) = "L" ;
+			AND m.loScope.lUserCancelled
+		*-- The process failed because the user cancelled, set a timeout
+		*-- so the user doesn't have to close the message dialog.
+		MESSAGEBOX( m.loErrorInfo.Message, 16, TOOL_PROMPT, 2000 )
+
+	CASE VARTYPE( m.loGitUtilities ) = "O"
+		*-- If the Git utilities object is available, use that to report
+		*-- the error, since it gives you more detail.
+		lcRepository = .NULL.
+		IF TYPE( "m.loScope.cScope" ) = "C" ;
+				AND NOT EMPTY( NVL( m.loScope.cScope, SPACE(0) ) ) ;
+				AND NOT m.loScope.lScopeIsProject
+			lcRepository = m.loScope.cScope
+		ENDIF
+
+		loGitUtilities.ShowError( m.loErrorInfo, m.lcRepository )
+
+	OTHERWISE
+		*-- No goodies available, so just report the error message.
+		MESSAGEBOX( m.loErrorInfo.Message, 16, TOOL_PROMPT )
+ENDCASE
 
 *-- Provide a return value that can be used if you call this process
 *-- from some other code.
