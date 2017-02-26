@@ -63,12 +63,12 @@ will appear in the Thor tools menus under `Applications > Git-Hg Utilities`.
 #### Beta ####
 
 Occasionally I may make new features available via a beta version of Git and Utilities before
-releasing them in the regular version.  If you would like to try the beta version, you can manually
-add it to the **Check for Updates** list by [downloading the file][Git-tools-beta]
-`Thor_Update_Git-Utils-Beta.PRG`, and saving it to your `Thor\Tools\Updates\My Updates` folder.
-This folder can be easily accessed from the Thor menu by selecting `Thor > More > Open Folder > Tools`.
-From there you can navigate to `Updates\My Updates`.  You can then run **Check for Updates**, and
-you will see a new item in the list named _Git and Hg Utilities (Beta)_.  
+releasing them in the regular version.  If you would like to try the beta version, first install
+the release as described in the previous section. In the Thor tools menus, under
+`Applications > Git-Hg Utilities`, there is a menu item called **Add Git-Hg Beta to Check for
+Updates**.  Running this tool will add a new item to Thor's **Check for Updates** called
+_Git and Hg Utilities (Beta)_.  To remove the beta from the Check for Updates list, there is
+another tool called **Remove Git-Hg Beta from Check for Updates**
 
 **NOTE:** The beta version of Git and Hg Utilities completely replaces the release version, so you
 cannot have both installed at the same time.  However, it is very easy to return to the release
