@@ -66,11 +66,11 @@ will appear in the Thor tools menus under `Applications > Git-Hg Utilities`.
 
 Occasionally I may make new features available via a beta version of Git and Utilities before
 releasing them in the regular version.  If you would like to try the beta version, first install
-the release as described in the previous section. In the Thor tools menus, under
-`Applications > Git-Hg Utilities`, there is a menu item called **Add Git-Hg Beta to Check for
-Updates**.  Running this tool will add a new item to Thor's **Check for Updates** called
-_Git and Hg Utilities (Beta)_.  To remove the beta from the Check for Updates list, there is
-another tool called **Remove Git-Hg Beta from Check for Updates**
+the release as described in the previous section.  In the Thor tools menus, under
+`Applications > Git-Hg Utilities`, there is a menu item called **Add/Remove Git-Hg Beta in Check
+for Updates**.  Running this tool will prompt you to add a new item to Thor's **Check for Updates**
+called _Git and Hg Utilities (Beta)_.  To remove the beta from the Check for Updates list, run the
+same tool again, and you will be prompted to remove it.
 
 **NOTE:** The beta version of Git and Hg Utilities completely replaces the release version, so you
 cannot have both installed at the same time.  However, it is very easy to return to the release
@@ -224,54 +224,6 @@ informational tool, which displays a cursor containing a list of all repositorie
 files from the project, the branch that is currently checked out for each project, and a few stats
 about any changes or conflicts for each repository.  A type field indicates whether each repository
 is a Git (G) or Mercurial (M) repository.
-
-### `Thor_Tool_FoxBin2Prg_DB2toDBF.PRG` ###
-**PLEASE NOTE:**  As of FoxBin2Prg version 1.19.47, this tool is no longer needed, and will
-eventually be removed.  There is a new FoxBin2Prg.CFG setting `DBF_Conversion_Support: 8`,
-which provides bidirectional conversion of .DBF/.DB2 files directly from FoxBin2Prg.  I
-recommend using FoxBin2Prg with that new setting, rather than this tool.  
-
-Unlike the other Git-Hg Utilities, this tool only uses FoxBin2Prg and not Git or Mercurial, and
-therefore can be used with any source control system where you are using FoxBin2Prg.  For that
-reason, this tool is installed in the Thor tools menus under `Applications > FoxBin2Prg`, so that
-it is grouped with other FoxBin2Prg tools in the Thor repository.  It appears in that menu as
-**Populate DBF from DB2**.  
-
-The purpose of this tool is to allow a .DBF file to be created *and populated* from a FoxBin2Prg
-text file that was created with the FoxBin2Prg.CFG setting `DBF_Conversion_Support: 4`, effectively
-giving you bidirectional support with this setting.  I wrote this tool because I had some settings
-tables which had been edited in two different branches of the same repository, and I needed to
-merge those changes.  The changes could be merged in the .DB2 file, and this tool was used to
-regenerate the .DBF with the combined record changes.  
-
-This tool has a couple limitations:  
-
- - It was written with free tables in mind, and has not been tested on tables that are contained in
-   a VFP database.  While it might work on contained tables, use it at your own risk.
- - This tool cannot populate Varbinary, Blob, or auto-increment fields.  If you run this on a table
-   containing those data types, it will abort with an error and not convert anything.
-
-If you want to add the DB2-to-DBF converter to the Finder context menu, go to
-`Thor > More > Manage Plug-Ins`.  In the *Manage Plug-In PRGs* dialog, locate the
-*Finder context menu* plug-in, and click the *Action* button (either *Create* or *Edit*), and insert
-code like the following into the plug-in .PRG:  
-
-```
-  *-- Attempt to get a reference to the text-to-DBF converter.
-  loDB2toDBF = EXECSCRIPT( _Screen.cThorDispatcher, ;
-      "Class= ConvertFoxBin2PrgTextToTable from Thor_Tool_FoxBin2Prg_DB2ToDBF.PRG" )
-  IF VARTYPE( m.loDB2toDBF ) = "O"
-    *-- Check if the selected file has a DBF text extension, and get
-    *-- the command to add to the context menu for this file.  If the
-    *-- command comes back empty, the file is not a DB2 file.
-    lcExec = m.loDB2toDBF.GetMenuItemExec( m.lcFileName )
-    IF NOT EMPTY( m.lcExec )
-      *-- Add the item to the context menu.
-      loContextMenu.AddMenuItem( "Convert " + m.lcQuote + JUSTFNAME( m.lcFileName ) + m.lcQuote ;
-        + " to DBF", m.lcExec )
-    ENDIF
-  ENDIF
-```
 
 [Git-tools-history]: https://bitbucket.org/mikepotjer/vfp-git-utils/src/master/GitUtilitiesVersionFile.txt
 [FoxProThor-Google-group]: https://groups.google.com/forum/?fromgroups#!forum/FoxProThor
