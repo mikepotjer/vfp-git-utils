@@ -3,30 +3,16 @@ LPARAMETERS toUpdateInfo
 LOCAL lcNote, ;
 	lcRegisterWithThor
 
-WITH toUpdateInfo
-    .ApplicationName = 'Git and Hg Utilities (Beta)'
-    .Component       = 'No'
-    .ToolName        = 'Thor_Tool_ThorInternalRepository'
-    .VersionNumber   = 'v2016.12.27.beta'
-    .VersionDate     = DATE(2016, 12, 27)
-    .SourceFileUrl   = 'https://bitbucket.org/mikepotjer/vfp-git-utils/downloads/GitUtils-Beta.zip'
-    .LinkPrompt      = 'Git/Hg Utilities for VFP Home Page'
-    .Link            = 'https://bitbucket.org/mikepotjer/vfp-git-utils'
-ENDWITH
-
-TEXT TO lcRegisterWithThor NOSHOW TEXTMERGE
-    MESSAGEBOX('From the Thor Launcher, see "Applications -> Git-Hg Utilities"' + CHR(13) ;
-        + SPACE(5) + 'and "Applications -> FoxBin2Prg"', 0 ,"Git-Hg Utilities installed", 5000)
-ENDTEXT
-
-ADDPROPERTY( toUpdateInfo, 'RegisterWithThor', lcRegisterWithThor )
-
 TEXT TO lcNote NOSHOW
 The Git-Hg Utilities ease the process of working with VFP's binary files when using Git or Mercurial as the source control provider, as well as making it easier to work with .PJX projects which contain files from multiple Git or Mercurial repositories.  See the tool home page for more information.
 
 These utilities require the Thor repository, FoxBin2Prg, Git for Windows or Mercurial for Windows, and the Windows Scripting Host.
 
 ==== Change History ====
+2017.03.18.beta
+ - Combine the "Add Git-Hg Beta to Check for Updates" and "Remove Git-Hg Beta from Check for Updates" tools into a single tool called "Add/Remove Remove Git-Hg Beta in Check for Updates".  This tool prompts you to add the beta to the My Updates folder if it doesn't exist, and prompts you to remove it when it does exist.
+ - Remove the "Populate DBF from DB2" tool from Thor.  This was located under the "Applications > FoxBin2Prg" menu.  This tool is no longer relevant since FoxBin2Prg added the option "DBF_Conversion_Support: 8".
+
 2016.12.27.beta
  - The "Post-checkout/update" and "Prepare for commit" processes now close all project manager files (.PJX) at the beginning of the process, and don't open the project files again until all processing is complete.  This eliminates some issues where the project manager cannot find a file that hasn't been regenerated yet, as well as ensuring that a file is not held open by the project manager during processing.
 
@@ -96,6 +82,27 @@ These utilities require the Thor repository, FoxBin2Prg, Git for Windows or Merc
 ENDTEXT
 
 ADDPROPERTY( toUpdateInfo, 'Notes', lcNote )
+
+WITH toUpdateInfo
+    .ApplicationName = 'Git and Hg Utilities (Beta)'
+    .Component       = 'No'
+    .ToolName        = 'Thor_Tool_ThorInternalRepository'
+    .VersionNumber   = 'v2017.03.18.beta'
+    .VersionDate     = DATE(2017, 3, 18)
+    .SourceFileUrl   = 'https://bitbucket.org/mikepotjer/vfp-git-utils/downloads/GitUtils-Beta.zip'
+    .LinkPrompt      = 'Git/Hg Utilities for VFP Home Page'
+    .Link            = 'https://bitbucket.org/mikepotjer/vfp-git-utils'
+ENDWITH
+
+TEXT TO lcRegisterWithThor NOSHOW TEXTMERGE
+	ERASE ( _SCREEN.cThorFolder + "\Tools\Thor_Tool_GitUtilities_AddBetaToCFU.prg" )
+	ERASE ( _SCREEN.cThorFolder + "\Tools\Thor_Tool_GitUtilities_RemoveBetaFromCFU.prg" )
+	ERASE ( _SCREEN.cThorFolder + "\Tools\Thor_Tool_FoxBin2Prg_DB2toDBF.prg" )
+
+    MESSAGEBOX('From the Thor Launcher, see "Applications -> Git-Hg Utilities"', 0 ,"Git-Hg Utilities installed", 5000)
+ENDTEXT
+
+ADDPROPERTY( toUpdateInfo, 'RegisterWithThor', lcRegisterWithThor )
 
 EXECSCRIPT( _Screen.cThorDispatcher, 'Result=', toUpdateInfo )
 RETURN toUpdateInfo

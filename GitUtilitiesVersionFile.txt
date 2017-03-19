@@ -3,24 +3,6 @@ LPARAMETERS toUpdateInfo
 LOCAL lcNote, ;
 	lcRegisterWithThor
 
-WITH toUpdateInfo
-    .ApplicationName = 'Git and Hg Utilities'
-    .Component       = 'No'
-    .ToolName        = 'Thor_Tool_ThorInternalRepository'
-    .VersionNumber   = 'v2017.02.25'
-    .VersionDate     = DATE(2017, 2, 25)
-    .SourceFileUrl   = 'https://bitbucket.org/mikepotjer/vfp-git-utils/downloads/GitUtils.zip'
-    .LinkPrompt      = 'Git/Hg Utilities for VFP Home Page'
-    .Link            = 'https://bitbucket.org/mikepotjer/vfp-git-utils'
-ENDWITH
-
-TEXT TO lcRegisterWithThor NOSHOW TEXTMERGE
-    MESSAGEBOX('From the Thor Launcher, see "Applications -> Git-Hg Utilities"' + CHR(13) ;
-        + SPACE(5) + 'and "Applications -> FoxBin2Prg"', 0 ,"Git-Hg Utilities installed", 5000)
-ENDTEXT
-
-ADDPROPERTY( toUpdateInfo, 'RegisterWithThor', lcRegisterWithThor )
-
 TEXT TO lcNote NOSHOW
 The Git-Hg Utilities ease the process of working with VFP's binary files when using Git or Mercurial as the source control provider, as well as making it easier to work with .PJX projects which contain files from multiple Git or Mercurial repositories.  See the tool home page for more information.
 
@@ -89,6 +71,27 @@ These utilities require the Thor repository, FoxBin2Prg, Git for Windows or Merc
 ENDTEXT
 
 ADDPROPERTY( toUpdateInfo, 'Notes', lcNote )
+
+WITH toUpdateInfo
+    .ApplicationName = 'Git and Hg Utilities'
+    .Component       = 'No'
+    .ToolName        = 'Thor_Tool_ThorInternalRepository'
+    .VersionNumber   = 'v2017.02.25'
+    .VersionDate     = DATE(2017, 2, 25)
+    .SourceFileUrl   = 'https://bitbucket.org/mikepotjer/vfp-git-utils/downloads/GitUtils.zip'
+    .LinkPrompt      = 'Git/Hg Utilities for VFP Home Page'
+    .Link            = 'https://bitbucket.org/mikepotjer/vfp-git-utils'
+ENDWITH
+
+TEXT TO lcRegisterWithThor NOSHOW TEXTMERGE
+	ERASE ( _SCREEN.cThorFolder + "\Tools\Thor_Tool_GitUtilities_AddBetaToCFU.prg" )
+	ERASE ( _SCREEN.cThorFolder + "\Tools\Thor_Tool_GitUtilities_RemoveBetaFromCFU.prg" )
+	ERASE ( _SCREEN.cThorFolder + "\Tools\Thor_Tool_FoxBin2Prg_DB2toDBF.prg" )
+
+    MESSAGEBOX('From the Thor Launcher, see "Applications -> Git-Hg Utilities"', 0 ,"Git-Hg Utilities installed", 5000)
+ENDTEXT
+
+ADDPROPERTY( toUpdateInfo, 'RegisterWithThor', lcRegisterWithThor )
 
 EXECSCRIPT( _Screen.cThorDispatcher, 'Result=', toUpdateInfo )
 RETURN toUpdateInfo
