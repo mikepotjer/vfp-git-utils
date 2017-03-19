@@ -6262,6 +6262,12 @@ IF ISNULL( m.loConverter )
 	RETURN
 ENDIF
 
+*{ MJP -- 02/25/2017 08:43:04 PM - Begin
+*-- The progress form will not refresh properly if the AutoYield setting
+*-- is false, so make sure it's turned on before the form is loaded.
+_VFP.AutoYield = .T.
+*} MJP -- 02/25/2017 08:43:04 PM - End
+
 *-- Load the progress form.
 loConverter.LoadProgressBarForm()
 
