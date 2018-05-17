@@ -13,7 +13,8 @@ The Git-Hg Utilities ease the process of working with VFP's binary files when us
 These utilities require the Thor repository, FoxBin2Prg, Git for Windows or Mercurial for Windows, and the Windows Scripting Host.
 
 ==== Change History ====
-2018.05.17.beta
+2018.05.18.beta
+ - Update the code that closes and reopens projects to support the VFPX Project Explorer. When one or more solutions are open in Project Explorer, the Git-Hg utilities will use the Project Explorer interface to close and reopen those projects, so that Project Explorer does not shut down after a Git-Hg process.
  - Redirect all links for this utility to GitHub.
  - Update VFPX project links to the GitHub locations.
 
@@ -99,8 +100,8 @@ WITH toUpdateInfo
     .ApplicationName = 'Git and Hg Utilities (Beta)'
     .Component       = 'No'
     .ToolName        = 'Thor_Tool_ThorInternalRepository'
-    .VersionNumber   = 'v2018.05.17.beta'
-    .VersionDate     = DATE(2018, 5, 17)
+    .VersionNumber   = 'v2018.05.18.beta'
+    .VersionDate     = DATE(2018, 5, 18)
     .SourceFileUrl   = 'https://raw.githubusercontent.com/mikepotjer/vfp-git-utils/beta/ThorUpdater/GitUtils.zip'
     .LinkPrompt      = 'Git/Hg Utilities for VFP Home Page'
     .Link            = 'https://github.com/mikepotjer/vfp-git-utils/tree/beta'
