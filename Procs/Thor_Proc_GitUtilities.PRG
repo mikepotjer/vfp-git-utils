@@ -154,12 +154,10 @@ inPreserveFileTimestamps = ccInitialValuePreserveTS	&& 2
 *-- runtime.
 icGitTimestampFilename = ccInitialValueGitTSFileName	&& ".gittimestamp"
 
-*{ MJP -- 06/24/2016 03:21:51 PM - Begin
 *-- Stores the default name of the timestamp file which stores the
 *-- modification dates of the files in Mercurial repositories.  This
 *-- is a property so that it can be changed at runtime.
 icHgTimestampFilename = ccInitialValueHgTSFileName	&& ".hgtimestamp"
-*} MJP -- 06/24/2016 03:21:51 PM - End
 
 *-- Stores the full path to the FoxBin2Prg.EXE app.  This can be set
 *-- manually if FoxBin2Prg is in a non-standard folder where this class
@@ -188,18 +186,15 @@ PROTECTED icVFPBinaryExtensionMapAlias
 *-- will be used to determine whether to undo changes to a binary file.
 icGitAlternateTextFilename = ".gitvfpalttext"
 
-*{ MJP -- 06/24/2016 05:59:52 PM - Begin
 *-- Stores the default name of the file which defines alternate text
 *-- files to be associated with a VFP binary file in a Git repository.
 icHgAlternateTextFilename = ".hgvfpalttext"
-*} MJP -- 06/24/2016 05:59:52 PM - End
 
 *-- This array stores the alternate text file mappings stored in the
 *-- file specified by icGitAlternateTextFilename and icHgAlternateTextFilename.
 DIMENSION iaAlternateText[1]
 iaAlternateText = .NULL.
 
-*{ MJP -- 11/26/2016 05:40:27 PM - Begin
 *-- When we are using the FoxBin2Prg progress bar for our own purpose,
 *-- these properties keep track of the last message displayed for each
 *-- progress bar.
@@ -221,7 +216,6 @@ inProgressBar1LastItem = 0
 inProgressBar2LastItem = 0
 PROTECTED inProgressBar1LastItem
 PROTECTED inProgressBar2LastItem
-*} MJP -- 11/26/2016 05:40:27 PM - End
 
 *********************************************************************
 PROCEDURE Init
@@ -261,7 +255,6 @@ IF VARTYPE( m.luValue ) = "C" ;
 	This.icGitTimestampFilename = JUSTFNAME( m.luValue )
 ENDIF
 
-*{ MJP -- 06/25/2016 01:54:19 PM - Begin
 *-- Retrieve the file name to use for the Mercurial timestamp file.
 *-- If it's valid, use it, but make sure it doesn't include any path
 *-- info.
@@ -270,7 +263,6 @@ IF VARTYPE( m.luValue ) = "C" ;
 		AND NOT EMPTY( m.luValue )
 	This.icHgTimestampFilename = JUSTFNAME( m.luValue )
 ENDIF
-*} MJP -- 06/25/2016 01:54:19 PM - End
 
 ENDPROC
 
@@ -351,11 +343,8 @@ TRY
 		toErrorInfo.Details = "Error " + TRANSFORM( m.lnReturnError )
 		llSuccess = .F.
 
-		*!* *{ MJP -- 07/27/2015 08:52:39 - Begin
 		*-- We don't always get error information back from a command,
 		*-- so make sure we generate some useful information.
-		*!* toErrorInfo.Message = IIF( FILE( m.lcOutputFile ), FILETOSTR( m.lcOutputFile ), ;
-		*!* 		"(No command output)" )
 		toErrorInfo.Message = IIF( FILE( m.lcOutputFile ), FILETOSTR( m.lcOutputFile ), SPACE(0) )
 
 		*-- If no error information was collected in the output file,
@@ -411,7 +400,6 @@ TRY
 		toErrorInfo.Message = "Error executing command: " + m.tcCommand + CHR(13) + CHR(13) ;
 				+ EVL( m.toErrorInfo.Message, "A general error occurred." ) + CHR(13) + CHR(13) ;
 				+ "Return Value: " + TRANSFORM( m.lnReturnError )
-		*!* *} MJP -- 07/27/2015 08:52:39 - End
 	ENDIF
 
 CATCH TO toErrorInfo
@@ -460,7 +448,6 @@ LOCAL lcCommand, ;
 	lcRepoType, ;
 	llSuccess
 
-*!* *{ MJP -- 06/23/2016 15:47:27 - Begin
 llSuccess = .T.
 
 lcRepoType = This.GetRepoType( m.tcRepository )
@@ -490,7 +477,6 @@ ENDCASE
 IF m.llSuccess
 	llSuccess = This.ExecuteCommand( @m.toErrorInfo, m.tcRepository, m.lcCommand, @m.lcFileList )
 ENDIF
-*!* *} MJP -- 06/23/2016 15:47:27 - End
 
 IF NOT m.llSuccess ;
 		OR EMPTY( m.lcFileList )
@@ -566,42 +552,35 @@ DIMENSION taFileDateList[ALEN( laFileList ), 2]
 lnFileCount = 0
 
 FOR xx = 1 TO ALEN( laFileList )
-	*!* MJP -- Removed 11/19/15 03:26:20 PM
-	*!* taFileDateList[m.xx,1] = laFileList[m.xx]
 	lcFileName = JUSTFNAME( laFileList[m.xx] )
 
 	*-- Get the full path to the file.  VFP seems to treat forward and
 	*-- backslashes the same, but convert them to backslashes for consistency.
 	lcFolder = ADDBS( m.lcRepository ) + JUSTPATH( CHRTRAN( laFileList[m.xx], "/", "\" ) )
 
-	*{ MJP -- 11/19/2015 03:27:11 PM - Begin
 	*-- Make sure the folder still exists, in case it has been deleted,
 	*-- but the deleted files in the folder haven't been staged for
 	*-- commit.
 	IF NOT DIRECTORY( m.lcFolder )
 		LOOP
 	ENDIF
-	*} MJP -- 11/19/2015 03:27:11 PM - End
 
 	*-- Use the Windows shell object to drill down and get the modification
 	*-- date for the current file.
 	loFolder = m.loShell.NameSpace( m.lcFolder )
 	loFolderItem = m.loFolder.ParseName( m.lcFileName )
 
-	*{ MJP -- 11/19/2015 03:32:33 PM - Begin
 	*-- Make sure this file exists.  A deleted file will be in the list
 	*-- if the deletion hasn't been staged yet.
 	IF ISNULL( loFolderItem )
 		LOOP
 	ENDIF
-	*} MJP -- 11/19/2015 03:32:33 PM - End
 
 	lnFileCount = m.lnFileCount + 1
 	taFileDateList[m.lnFileCount,1] = laFileList[m.xx]
 	taFileDateList[m.lnFileCount,2] = m.loFolderItem.ModifyDate
 ENDFOR
 
-*{ MJP -- 11/19/2015 03:31:40 PM - Begin
 *-- Check the results.
 DO CASE
 	CASE m.lnFileCount = 0
@@ -617,7 +596,6 @@ DO CASE
 	OTHERWISE
 		*-- The results are fine as-is.
 ENDCASE
-*} MJP -- 11/19/2015 03:31:40 PM - End
 
 RETURN m.llSuccess
 ENDFUNC
@@ -646,17 +624,12 @@ LOCAL lcCommand, ;
 	llHasChanges, ;
 	llSuccess
 
-*-- Retrieve the git status using the static parseable format for the
-*-- output.
-*!* *{ MJP -- 06/25/2016 14:53:43 - Begin
-*!* llSuccess = This.ExecuteCommand( @m.toErrorInfo, m.tcRepository, "git status --porcelain", ;
-*!* 		@m.lcStatusInfo )
 *-- Determine the type of repository so the appropriate status command
-*-- can be used.
+*-- can be used. Retrieve the status using the static parseable format
+*-- for the output.
 lcRepoType = This.GetRepoType( m.tcRepository )
 lcCommand = IIF( m.lcRepoType = "M", "hg status", "git status --porcelain" )
 llSuccess = This.ExecuteCommand( @m.toErrorInfo, m.tcRepository, m.lcCommand, @m.lcStatusInfo )
-*!* *} MJP -- 06/25/2016 14:53:44 - End
 
 IF m.llSuccess
 	*-- The status info string will be blank if there are no changes.
@@ -889,11 +862,9 @@ tcCursorName = IIF( VARTYPE( m.tcCursorName ) = "C" AND NOT EMPTY( m.tcCursorNam
 		ALLTRIM( m.tcCursorName ), "C_RepoStatusResults" )
 USE IN SELECT( m.tcCursorName )
 
-*-- MJP -- 06/23/2016 05:12:25 PM
 *-- Determine the type of repository being processed.
 lcRepoType = This.GetRepoType( m.tcRepository )
 
-*-- MJP -- 10/12/2015 09:57:51 AM
 *-- If a filter was specified, use it as the pathspec for the status
 *-- command.
 lcPathSpec = IIF( VARTYPE( m.tcFilter ) = "C" AND NOT EMPTY( m.tcFilter ), SPACE(1) + m.tcFilter, SPACE(0) )
@@ -922,11 +893,8 @@ CREATE CURSOR ( m.tcCursorName ) ;
 		GS_WorkTreeStatus C(1), ;
 		GS_MergeConflict L )
 
-*-- Retrieve the git status using the static parseable format for the
-*-- output.
-*-- MJP -- 10/12/2015 09:59:19 AM
+*-- Retrieve the status using the static parseable format for the output.
 *-- Add any pathspec specified by the calling code.
-*-- MJP -- 06/23/2016 05:13:07 PM
 IF m.lcRepoType = "M"
 	*-- This is a Mercurial repository.  The pathspec should work the
 	*-- same as Git.
@@ -949,7 +917,6 @@ ENDIF
 lnCount = ALINES( laLines, m.lcStatusInfo, 4 )
 
 FOR xx = 1 TO m.lnCount
-	*{ MJP -- 06/23/2016 05:16:13 PM - Begin
 	IF m.lcRepoType = "M"
 		*-- Mercurial repository
 		*-- Hg only has one status code, so treat it like a "staged"
@@ -983,7 +950,6 @@ FOR xx = 1 TO m.lnCount
 		lcIndexStatus = LEFT( laLines[m.xx], 1 )
 		lcWorkTreeStatus = SUBSTR( laLines[m.xx], 2, 1 )
 
-		*-- MJP -- 09/18/2015 03:07:24 PM
 		*-- Check for a merge conflict on this item.  See the git status
 		*-- documentation for an explanation of what these codes mean.
 		llMergeConflict = INLIST( m.lcIndexStatus + m.lcWorkTreeStatus, "DD", "AU", "UD", "UA", "DU", "AA", "UU" )
@@ -1002,7 +968,6 @@ FOR xx = 1 TO m.lnCount
 			lcFileName = ALLTRIM( STREXTRACT( laLines[m.xx], "->" ) )
 		ENDIF
 	ENDIF
-	*} MJP -- 06/23/2016 05:16:13 PM - End
 
 	*-- Determine the file extension to report.
 	IF EMPTY( JUSTSTEM( m.lcFileName ) )
@@ -1267,7 +1232,6 @@ lcProjectFoldersAlias = JUSTSTEM( m.lcProjectName ) + "_Folders" + SYS(2015)
 
 *-- Generate the query to retrieve all the data paths represented in
 *-- the specified project.
-*-- MJP -- 06/24/2016 04:54:16 PM
 *-- Add a field for the repository type.
 TEXT TO m.lcSQL TEXTMERGE NOSHOW
 	SELECT DISTINCT ;
@@ -1325,25 +1289,6 @@ IF m.llSuccess
 	SCAN
 		lcFolderPath = EVALUATE( m.lcProjectFoldersAlias + ".PF_FolderPath" )
 
-		*!* *{ MJP -- 06/20/2016 16:04:00 - Begin
-		*!* DO WHILE OCCURS( "\", m.lcFolderPath ) > 1
-		*!* 	IF DIRECTORY( m.lcFolderPath + ".Git", 1 )
-		*!* 		*-- The current folder contains the .Git folder (which
-		*!* 		*-- is normally hidden), so this must be a Git repository.
-		*!* 		REPLACE PF_RepositoryFolder WITH ALLTRIM( m.lcFolderPath ) ;
-		*!* 				IN ( m.lcProjectFoldersAlias )
-		*!* 		EXIT
-		*!* 	ELSE
-		*!* 		*-- This folder is not a repository, so check if the
-		*!* 		*-- parent folder is.  Note that although subfolders
-		*!* 		*-- can be omitted from a repository, it will generally
-		*!* 		*-- be safe to assume that any folder that is in the
-		*!* 		*-- project will be managed by the repository of a
-		*!* 		*-- parent folder.
-		*!* 		lcFolderPath = LEFT( m.lcFolderPath, RAT( "\", m.lcFolderPath, 2 ) )
-		*!* 	ENDIF
-		*!* ENDDO
-
 		*-- Check if a repository exists in this folder, or one of its
 		*-- parent folders.  If so, save it.
 		lcRepoFolder = This.GetRepoFolderForPath( @m.toErrorInfo, m.lcFolderPath, @m.lcRepoType )
@@ -1352,19 +1297,15 @@ IF m.llSuccess
 					PF_RepositoryType WITH m.lcRepoType ;
 					IN ( m.lcProjectFoldersAlias )
 		ENDIF
-		*!* *} MJP -- 06/20/2016 16:04:00 - End
 	ENDSCAN
 
 	*-- There are likely multiple project folders that are included in
 	*-- the same repository, so consolidate the repository folders list.
-	*-- MJP -- 04/29/2015 05:20:43 PM
 	*-- Add a field to store the current branch for each repo, and make
 	*-- the cursor read/write so we can populate the field.
-	*-- MJP -- 09/18/2015 04:12:33 PM
 	*-- Add fields to store some statistics about each repository,
 	*-- making this cursor a little more useful for getting an overview
 	*-- of the status of the project.
-	*-- MJP -- 06/24/2016 04:57:05 PM
 	*-- Include the repository type in the results, and we can check
 	*-- if that has a value, rather than the folder field.
 	SELECT DISTINCT PF_RepositoryFolder, ;
@@ -1378,14 +1319,12 @@ IF m.llSuccess
 		WHERE NOT EMPTY( PF_RepositoryType ) ;
 		INTO CURSOR ( m.tcCursorName ) READWRITE
 
-	*{ MJP -- 04/29/2015 05:21:57 PM - Begin
 	IF RECCOUNT( m.tcCursorName ) > 0
-		*-- There are Git repositories in the project, so look up the
-		*-- current branch for each one.
+		*-- There are repositories in the project, so look up the current
+		*-- branch for each one.
 		SELECT ( m.tcCursorName )
 		GO TOP
 		SCAN
-			*{ MJP -- 06/24/2016 05:30:58 PM - Begin
 			*-- Determine the command needed to retrieve the name of
 			*-- the current branch in the repository.
 			*-- The Git command retrieves the name of the current branch,
@@ -1395,15 +1334,11 @@ IF m.llSuccess
 			lcCommand = IIF( EVALUATE( m.tcCursorName + ".PF_RepositoryType" ) = "M", ;
 					"hg branch", "git rev-parse --abbrev-ref HEAD" )
 
-			*!* IF This.ExecuteCommand( .NULL., PF_RepositoryFolder, "git rev-parse --abbrev-ref HEAD", ;
-			*!* 		@m.lcBranchName )
 			IF This.ExecuteCommand( .NULL., PF_RepositoryFolder, m.lcCommand, @m.lcBranchName )
-			*} MJP -- 06/24/2016 05:30:58 PM - End
 				REPLACE PF_CurrentBranch WITH RTRIM( m.lcBranchName ) ;
 						IN ( m.tcCursorName )
 			ENDIF
 
-			*{ MJP -- 09/18/2015 04:14:21 PM - Begin
 			*-- Attempt to get some stats for the current repository.
 			*-- If this fails, leave the statistic fields set to their
 			*-- default value of NULL to indicate that the information
@@ -1417,11 +1352,9 @@ IF m.llSuccess
 						PF_UntrackedItems WITH m.loRepoStatistics.UntrackedItems ;
 						IN ( m.tcCursorName )
 			ENDIF
-			*} MJP -- 09/18/2015 04:14:21 PM - End
 		ENDSCAN
 		GO TOP
 	ENDIF
-	*} MJP -- 04/29/2015 05:21:57 PM - End
 ENDIF
 
 *-- We're done with these cursors, so clean up.
@@ -1470,7 +1403,6 @@ LOCAL lcChangesAlias, ;
 
 llSuccess = .T.
 
-*-- MJP -- 12/27/2016 10:29:52 AM
 *-- Make sure all projects are closed before processing.
 loProjects = CREATEOBJECT( "colPushPopProjects" )
 
@@ -1506,17 +1438,12 @@ IF m.llHasChanges
 	*-- Get the path of the repository being processed.
 	lcRepository = This.GetRepositoryPath( m.tcRepository )
 
-	*!* *{ MJP -- 12/03/2016 15:22:11 - Begin
-	*!* lcMessage = "Converting Binary to Text for Repository:" + CHR(13) ;
-	*!* 		+ m.lcRepository + CHR(13) ;
-	*!* 		+ "Converting file: "
 	*-- Use our message method and a progress bar to provide nicer
 	*-- feedback.
 	This.ShowMessage( "Converting Binary to Text for Repository:" + CHR(13) + m.lcRepository )
 	This.LoadProgressBar()
 	lnFileNumber = 0
 	lnFileCount = RECCOUNT( m.lcChangesAlias )
-	*!* *} MJP -- 12/03/2016 15:22:11 - End
 
 	*-- Process the VFP binary files that have changed.
 	SELECT ( m.lcChangesAlias )
@@ -1542,30 +1469,20 @@ IF m.llHasChanges
 		lcMainExtension = This.GetMainBinaryExtension( GS_FileExtension )
 		lcFullFileName = ADDBS( m.lcRepository ) + FORCEEXT( m.lcRelativeFileName, m.lcMainExtension )
 
-		*!* *{ MJP -- 12/03/2016 15:23:16 - Begin
-		*!* *-- Use a simple WAIT WINDOW for progress info, which should
-		*!* *-- be quicker than instantiating and destroying the FoxBin2Prg
-		*!* *-- progress form for each file being processed.
-		*!* WAIT WINDOW m.lcMessage + m.lcRelativeFileName NOWAIT NOCLEAR
 		lcMessage = "Processing file: " + m.lcRelativeFileName
 		This.UpdateProgressBar( m.lcMessage, m.lnFileNumber, m.lnFileCount, 1 )
-		*!* *} MJP -- 12/03/2016 15:23:16 - End
 
-		*{ MJP -- 04/21/2015 10:56:32 AM - Begin
 		IF NOT This.ConvertVFPFile( @m.toErrorInfo, m.lcFullFileName, m.lcRepository )
 			llSuccess = .F.
 			EXIT
 		ENDIF
-		*} MJP -- 04/21/2015 10:56:32 AM - End
 
 		*-- If cleanup is being performed, check if the current file
 		*-- needs to be added to the list of files to check.  So far,
 		*-- .VCX and .FRX are the only files I've seen changed by a
 		*-- recompile.  This list should be updated to add any others
 		*-- we find.
-		*-- MJP -- 02/03/2015 09:16:29 AM
 		*-- It seems that .SCX files can also be affected.
-		*-- MJP -- 04/15/2015 11:43:26 AM
 		*-- .DBC files frequently change for reasons that are not the
 		*-- result of changes to code or table structures.
 		SELECT ( m.lcChangesAlias )
@@ -1598,25 +1515,13 @@ IF m.llSuccess ;
 	USE IN SELECT( m.lcCleanupAlias )
 ENDIF
 
-*!* *{ MJP -- 12/03/2016 19:51:36 - Begin
-*!* *{ MJP -- 06/11/2016 08:29:52 PM - Begin
-*!* *-- If there are any .PJX files that are not being tracked, but have a
-*!* *-- text file being tracked in the repo, regenerate those text files.
-*!* IF m.llSuccess
-*!* 	llSuccess = This.BinaryToTextProjectFilesInRepo( @m.toErrorInfo, m.tcRepository )
-*!* ENDIF
-*!* *} MJP -- 06/11/2016 08:29:52 PM - End
-*{ MJP -- 06/11/2016 08:29:52 PM - Begin
 *-- If there are any VFP binary files that are not being tracked, but
 *-- have a text file being tracked in the repo, regenerate those text
 *-- files.
 IF m.llSuccess
 	llSuccess = This.BinaryToTextForTextOnlyRepo( @m.toErrorInfo, m.tcRepository )
 ENDIF
-*} MJP -- 06/11/2016 08:29:52 PM - End
-*!* *} MJP -- 12/03/2016 19:51:36 - End
 
-*{ MJP -- 10/12/2015 03:07:34 PM - Begin
 *-- If no errors occurred, and there were changes to process, then add
 *-- any untracked files which should be included with the tracked files.
 *-- This ensures that all the binaries that go together, and the text
@@ -1627,7 +1532,6 @@ IF m.llSuccess ;
 		AND m.llHasChanges
 	llSuccess = This.AddUntrackedFilesToRepo( @m.toErrorInfo, m.tcRepository )
 ENDIF
-*} MJP -- 10/12/2015 03:07:34 PM - End
 
 *-- Generate the timestamp file if indicated.  We'll only do this here
 *-- if modified files were cleaned up, so that we don't generate a lot
@@ -1695,21 +1599,16 @@ llSuccess = This.FetchRepoStatus( @m.toErrorInfo, .NULL., m.lcStatusAlias )
 
 IF m.llSuccess
 	lcRepository = This.GetRepositoryPath( m.tcRepository )
-	*!* *{ MJP -- 12/03/2016 15:36:40 - Begin
-	*!* lcMessage = "Cleaning up Binary files for Repository:" + CHR(13) + m.lcRepository + CHR(13)
 	*-- Use the message method and a progress bar to provide nicer
 	*-- feedback.
 	This.ShowMessage( "Cleaning up Binary files for Repository:" + CHR(13) + m.lcRepository )
 	This.LoadProgressBar()
 	lnFileNumber = 0
 	lnFileCount = RECCOUNT( m.tcFileListAlias )
-	*!* *} MJP -- 12/03/2016 15:36:40 - End
 
-	*{ MJP -- 06/25/2016 03:56:02 PM - Begin
 	*-- Get the type of repository, which is needed to generate the
 	*-- appropriate command to undo file changes.
 	lcRepoType = This.GetRepoType( m.lcRepository )
-	*} MJP -- 06/25/2016 03:56:02 PM - End
 
 	*-- Scan the cleanup list to confirm whether changes should be
 	*-- undone for any of the files.
@@ -1717,12 +1616,9 @@ IF m.llSuccess
 	GO TOP
 	SCAN WHILE m.llSuccess
 		lcRelativeFileName = EVALUATE( m.tcFileListAlias + ".CB_FileName" )
-		*!* *{ MJP -- 12/03/2016 15:39:50 - Begin
-		*!* WAIT WINDOW m.lcMessage + "Checking file: " + m.lcRelativeFileName + "..." NOWAIT NOCLEAR
 		lnFileNumber = m.lnFileNumber + 1
 		lcMessage = "Checking file: " + m.lcRelativeFileName
 		This.UpdateProgressBar( m.lcMessage, m.lnFileNumber, m.lnFileCount, 1 )
-		*!* *} MJP -- 12/03/2016 15:39:50 - End
 
 		SELECT ( m.lcStatusAlias )
 		LOCATE FOR UPPER( GS_FileName ) == UPPER( m.lcRelativeFileName )
@@ -1737,7 +1633,6 @@ IF m.llSuccess
 
 		*-- Check if the file is already staged for commit, in which
 		*-- case 2 steps are required to undo the changes.
-		*-- MJP -- 06/25/2016 04:01:35 PM
 		*-- We only need the staged flag for a Git repository.
 		IF m.lcRepoType = "G"
 			llStaged = ( EVALUATE( m.lcStatusAlias + ".GS_IndexStatus" ) = "M" )
@@ -1768,25 +1663,15 @@ IF m.llSuccess
 			LOOP
 		ENDIF
 
-		*!* *{ MJP -- 12/03/2016 15:42:00 - Begin
-		*!* *-- Change the message when the file is being restored.
-		*!* WAIT WINDOW m.lcMessage + "Restoring file: " + m.lcRelativeFileName + "..." NOWAIT NOCLEAR
 		*-- Change the message when the file is being restored.
 		lcMessage = "Restoring file: " + m.lcRelativeFileName
 		This.UpdateProgressBar( m.lcMessage, m.lnFileNumber )
-		*!* *} MJP -- 12/03/2016 15:42:00 - End
 
 		*-- If the binary file was staged, we need to unstage it.
 		IF m.llStaged
 			llSuccess = This.ExecCommandVFPBinary( @m.toErrorInfo, "git reset", m.lcRelativeFileName )
 		ENDIF
 
-		*!* *{ MJP -- 06/25/2016 16:03:47 - Begin
-		*!* *-- Checkout the last version of the file for the most recent
-		*!* *-- commit in the current working tree.
-		*!* IF m.llSuccess
-		*!* 	llSuccess = This.ExecCommandVFPBinary( @m.toErrorInfo, "git checkout", m.lcRelativeFileName )
-		*!* ENDIF
 		DO CASE
 			CASE NOT m.llSuccess
 				*-- Something already failed.
@@ -1801,7 +1686,6 @@ IF m.llSuccess
 				*-- the most recent commit in the current working tree.
 				llSuccess = This.ExecCommandVFPBinary( @m.toErrorInfo, "git checkout", m.lcRelativeFileName )
 		ENDCASE
-		*!* *} MJP -- 06/25/2016 16:03:47 - End
 	ENDSCAN
 
 	*-- If timestamps are being saved, restore the modification dates
@@ -1813,7 +1697,6 @@ IF m.llSuccess
 			*-- Something failed, or timestamps are not preserved, so
 			*-- nothing to do.
 
-		*-- MJP -- 05/11/2015 05:07:05 PM
 		CASE NOT FILE( ADDBS( m.lcRepository ) + This.GetTimestampFileName( .NULL., m.lcRepository ) )
 			*-- Timestamps are being preserved, but there is no file
 			*-- yet, so nothing to restore.
@@ -1877,21 +1760,12 @@ DO CASE
 		USE IN SELECT( m.lcRepoListAlias )
 		RETURN m.llSuccess
 
-	*{ MJP -- 06/23/2016 12:00:20 PM - Begin
 	CASE NVL( This.IsFileInRepo( @m.toErrorInfo, m.tcProjectName, .T. ), .F. )
 		*-- The project file is already in the repository, so it will
 		*-- be processed with the rest of the files in the repo.
-	*} MJP -- 06/23/2016 12:00:20 PM - End
-
-	*!* MJP -- Removed 12/27/2016 10:36:56
-	*!* CASE NOT This.BinaryToTextProjectFile( @m.toErrorInfo, m.tcProjectName )
-	*!* 	*-- The text file for the project itself could not be updated,
-	*!* 	*-- so abort.
-	*!* 	RETURN .F.
 
 	OTHERWISE
 		*-- There is a list of repositories to process.
-		*-- MJP -- 12/27/2016 10:37:27 AM
 		*-- The project file isn't in the repository, so the text file
 		*-- needs to be generated.
 		llBin2TxtSelectedProject = .T.
@@ -2144,18 +2018,6 @@ SCAN
 		*-- (\).
 		lcFullFileName = FULLPATH( ADDBS( m.lcRepository ) + FORCEEXT( laTextFiles[m.xx], m.lcBinaryExtension ) )
 
-		*!* MJP -- Removed 12/27/2016 10:55:05
-		*-- The projects should all be closed now before this method
-		*-- is called.
-		*!* llProjectOpen = .F.
-
-		*!* *-- If a project text file is being generated, check if the
-		*!* *-- specified project is open, because we can't generate the
-		*!* *-- text file if it is.
-		*!* IF m.lcBinaryExtension == "PJX"
-		*!* 	llProjectOpen = This.CloseProject( m.lcFullFileName )
-		*!* ENDIF
-
 		*-- Attempt to generate the text file.
 		IF NOT This.ConvertVFPFile( @m.toErrorInfo, m.lcFullFileName, m.lcRepository )
 			llSuccess = .F.
@@ -2196,13 +2058,6 @@ SCAN
 				ENDIF
 			ENDFOR
 		ENDIF
-
-		*!* MJP -- Removed 12/27/2016 10:56:02
-		*!* *-- If project text file was generated and the project was
-		*!* *-- open earlier, re-open it.
-		*!* IF m.llProjectOpen
-		*!* 	MODIFY PROJECT ( FORCEEXT( m.lcFullFileName, "PJX" ) ) NOWAIT
-		*!* ENDIF
 	ENDFOR
 ENDSCAN
 
@@ -2255,115 +2110,6 @@ ENDIF
 RETURN m.llProjectOpen
 ENDFUNC
 
-*!* MJP -- Removed 12/03/2016 20:15:31
-*!* *********************************************************************
-*!* PROTECTED FUNCTION BinaryToTextProjectFilesInRepo
-
-*!* *!*	If there are .PJX files that are not being tracked in the specified repository, but there are
-*!* *!*	text files for those .PJX files (typically with a .PJ2 extension) that ARE being tracked, then
-*!* *!*	this method will regenerate those text files.
-
-*!* *!*	PARAMETERS:
-*!* *!*		  toErrorInfo (O) -	A variable passed by reference to store any error info returned from this
-*!* *!*							method.  This will be returned as an Exception object.  This parameter is
-*!* *!*							not required, but recommended.
-*!* *!*		 tcRepository (O) -	The path of the repository where the .PJX files are to be processed.  If
-*!* *!*							omitted, the current repository will be used.
-
-*!* *!*	RETURNS: Logical
-*!* *!*		Returns .T. if there is nothing to do, or the project files are successfully processed.
-*!* *!*		Returns .F. if an error occurs.
-*!* *********************************************************************
-*!* LPARAMETERS toErrorInfo AS Exception, tcRepository AS String
-
-*!* LOCAL laProjectBinaryFiles[1], ;
-*!* 	laProjectTextFiles[1], ;
-*!* 	lcProjectName, ;
-*!* 	lcRepoFilesAlias, ;
-*!* 	lcRepository, ;
-*!* 	lcTextExtension, ;
-*!* 	llSuccess, ;
-*!* 	xx
-
-*!* llSuccess = .T.
-
-*!* lcRepository = This.GetRepositoryPath( m.tcRepository )
-
-*!* *-- Check if there is a text extension specified for .PJX files.  If
-*!* *-- .PJX files are not being converted to text in this repository, then
-*!* *-- there's nothing to do here.
-*!* lcTextExtension = This.GetTextExtension( "PJX", m.lcRepository )
-*!* IF m.lcTextExtension == "PJX"
-*!* 	RETURN m.llSuccess
-*!* ENDIF
-
-*!* *-- Get a list of all the files tracked in the repository.
-*!* lcRepoFilesAlias = "C_RepositoryFileList" + SYS(2015)
-*!* llSuccess = This.FetchRepoFileList( @m.toErrorInfo, m.lcRepository, m.lcRepoFilesAlias )
-*!* IF m.llSuccess
-*!* 	laProjectTextFiles = .NULL.
-*!* 	laProjectBinaryFiles = .NULL.
-
-*!* 	*-- Get a list of just the text files for .PJX files, and a list
-*!* 	*-- of any .PJX files tracked in the repository.
-*!* 	TRY
-*!* 		SELECT GL_FileName ;
-*!* 			FROM ( m.lcRepoFilesAlias ) ;
-*!* 			WHERE RTRIM( GL_FileExtension ) == m.lcTextExtension ;
-*!* 			INTO ARRAY laProjectTextFiles
-
-*!* 		SELECT GL_FileName ;
-*!* 			FROM ( m.lcRepoFilesAlias ) ;
-*!* 			WHERE RTRIM( GL_FileExtension ) == "PJX" ;
-*!* 			INTO ARRAY laProjectBinaryFiles
-
-*!* 	CATCH TO toErrorInfo
-*!* 		llSuccess = .F.
-*!* 	ENDTRY
-*!* ENDIF
-
-*!* USE IN SELECT( m.lcRepoFilesAlias )
-
-*!* *-- If there are project manager text files in this repository, process
-*!* *-- them.
-*!* IF m.llSuccess ;
-*!* 		AND NOT ISNULL( laProjectTextFiles[1] )
-*!* 	lcRepository = ADDBS( m.lcRepository )
-
-*!* 	FOR xx = 1 TO ALEN( laProjectTextFiles, 1 )
-*!* 		*-- Get the full path to the .PJX file corresponding to this
-*!* 		*-- text file.
-*!* 		lcProjectName = FORCEEXT( CHRTRAN( m.lcRepository + laProjectTextFiles[m.xx], "/", "\" ), "PJX" )
-
-*!* 		DO CASE
-*!* 			CASE NOT FILE( m.lcProjectName )
-*!* 				*-- The .PJX file doesn't exist, so there's nothing to
-*!* 				*-- process.  Evidently the text file has not been
-*!* 				*-- converted back to a binary yet.
-
-*!* 			CASE NOT ISNULL( laProjectBinaryFiles[1] ) ;
-*!* 					AND ASCAN( laProjectBinaryFiles, FORCEEXT( laProjectTextFiles[m.xx], "PJX" ), 1, -1, 1, 1+2+4 ) > 0
-*!* 				*-- This repository is tracking .PJX files, and the
-*!* 				*-- .PJX file for this specific text file is being
-*!* 				*-- tracked in the repo.  The text file will be regenerated
-*!* 				*-- by This.BinaryToTextRepo(), so no need to deal with
-*!* 				*-- it again here.
-
-*!* 			CASE This.BinaryToTextProjectFile( @m.toErrorInfo, m.lcProjectName )
-*!* 				*-- The text file was successfully updated for the .PJX
-*!* 				*-- file.
-
-*!* 			OTHERWISE
-*!* 				*-- An error occurred updating the text file, abort.
-*!* 				llSuccess = .F.
-*!* 				EXIT
-*!* 		ENDCASE
-*!* 	ENDFOR
-*!* ENDIF
-
-*!* RETURN m.llSuccess
-*!* ENDFUNC
-
 *********************************************************************
 FUNCTION BinaryToTextProjectFile
 
@@ -2397,7 +2143,6 @@ llSuccess = .T.
 
 *-- Check if the specified project is open, because we can't generate
 *-- the text file if it is.
-*-- MJP -- 12/27/2016 11:16:57 AM
 *-- Ordinarily, all projects will now be closed before this method is
 *-- called, but this method is not protected, so it could conceivably
 *-- be called in a context where the project file is still open.
@@ -2486,16 +2231,12 @@ ELSE
 	lnFileCount = ALINES( laFileList, m.lcFileContent, 1+4 )
 	DIMENSION taFileDateList[m.lnFileCount,2]
 
-	*-- MJP -- 06/11/2016 03:55:20 PM
 	*-- Keep a separate count of the number of files added to the list.
 	lnListCount = 0
 
 	*-- Extract the file name and timestamp from the temporary array,
 	*-- converting the timestamp to a date/time data type.
 	FOR xx = 1 TO m.lnFileCount
-		*!* *{ MJP -- 06/11/2016 15:41:29 - Begin
-		*!* taFileDateList[m.xx,1] = GETWORDNUM( laFileList[m.xx], 2, CHR(9) )
-		*!* taFileDateList[m.xx,2] = EVALUATE( "{^" + GETWORDNUM( laFileList[m.xx], 1, CHR(9) ) + "}" )
 		lcFilename = GETWORDNUM( laFileList[m.xx], 2, CHR(9) )
 		ltTimestamp = EVALUATE( "{^" + GETWORDNUM( laFileList[m.xx], 1, CHR(9) ) + "}" )
 
@@ -2521,16 +2262,13 @@ ELSE
 				*-- The file already exists, and doesn't require any
 				*-- changes.
 		ENDCASE
-		*!* *} MJP -- 06/11/2016 15:41:29 - End
 	ENDFOR
 
-	*{ MJP -- 06/11/2016 03:57:30 PM - Begin
 	*-- If the list contains fewer items than what was read from the
 	*-- file, reduce the size of the array.
 	IF m.lnListCount < m.lnFileCount
 		DIMENSION taFileDateList[m.lnListCount,2]
 	ENDIF
-	*} MJP -- 06/11/2016 03:57:30 PM - End
 ENDIF
 
 RETURN m.llSuccess
@@ -2899,24 +2637,16 @@ IF m.llSuccess ;
 		*-- Get the full folder name and normalize it to backslashes.
 		lcFolder = m.lcRepository + JUSTPATH( CHRTRAN( laFileDateList[m.lnRow, 1], "/", "\" ) )
 
-		*{ MJP -- 11/19/2015 04:22:09 PM - Begin
 		*-- Make sure the folder still exists, in case it was deleted
 		*-- after the timestamp file was created.
 		IF NOT DIRECTORY( m.lcFolder )
 			LOOP
 		ENDIF
-		*} MJP -- 11/19/2015 04:22:09 PM - End
 
 		*-- Get a shell object reference to the file.
 		loFolder = m.loShell.NameSpace( m.lcFolder )
 		loFolderItem = m.loFolder.ParseName( m.lcFileName )
 
-		*!* *{ MJP -- 11/19/15 04:23:39 PM - Begin
-		*!* *-- If the current modification date of this file is different
-		*!* *-- from what was saved, replace it.
-		*!* IF NOT m.loFolderItem.ModifyDate = laFileDateList[m.lnRow, 2]
-		*!* 	loFolderItem.ModifyDate = laFileDateList[m.lnRow, 2]
-		*!* ENDIF
 		DO CASE
 			CASE ISNULL( m.loFolderItem )
 				*-- The current file specified in the timestamp list
@@ -2931,7 +2661,6 @@ IF m.llSuccess ;
 				*-- from what was saved, so replace it.
 				loFolderItem.ModifyDate = laFileDateList[m.lnRow, 2]
 		ENDCASE
-		*!* *} MJP -- 11/19/15 04:23:39 PM - End
 	ENDFOR
 ENDIF
 
@@ -3053,12 +2782,10 @@ ENDIF
 SELECT ( m.lcRepoListAlias )
 GO TOP
 SCAN
-	*{ MJP -- 06/25/2016 04:39:31 PM - Begin
 	*-- For now, don't allow tagging Mercurial repositories.
 	IF PF_RepositoryType = "M"
 		LOOP
 	ENDIF
-	*} MJP -- 06/25/2016 04:39:31 PM - End
 
 	*-- Attempt to tag the current repository.  An unsigned annotated
 	*-- tag (-a) will be created, and if the tag already exists it will
@@ -3124,12 +2851,10 @@ GO TOP
 SCAN
 	lcTagList = SPACE(0)
 
-	*{ MJP -- 06/25/2016 04:41:57 PM - Begin
 	*-- For now, don't allow untagging Mercurial repositories.
 	IF PF_RepositoryType = "M"
 		LOOP
 	ENDIF
-	*} MJP -- 06/25/2016 04:41:57 PM - End
 
 	*-- Attempt to lookup the specified tag in the current repository.
 	DO CASE
@@ -3372,7 +3097,6 @@ DO CASE
 		*-- There is a list of repositories to process.
 ENDCASE
 
-*-- MJP -- 12/27/2016 11:03:30 AM
 *-- Make sure any open projects are closed before processing files.
 loProjects = CREATEOBJECT( "colPushPopProjects" )
 
@@ -3415,7 +3139,6 @@ LOCAL laTimestampList[1], ;
 	llSuccess, ;
 	loProjects
 
-*-- MJP -- 12/27/2016 11:05:28 AM
 *-- If this method was called directly, make sure all open projects
 *-- are closed before processing.
 loProjects = CREATEOBJECT( "colPushPopProjects" )
@@ -3425,22 +3148,14 @@ loProjects = CREATEOBJECT( "colPushPopProjects" )
 lcFileListAlias = "C_GitRepoFileList" + SYS(2015)
 USE IN SELECT( m.lcFileListAlias )
 
-*{ MJP -- 08/27/2016 04:06:01 PM - Begin
 *-- Initialize the timestamp list array to be passed to the methods
 *-- that are regenerating and recompiling files.
 laTimestampList = .NULL.
-*} MJP -- 08/27/2016 04:06:01 PM - End
 
-*!* *{ MJP -- 11/26/2016 15:21:35 - Begin
-*!* *-- Make sure all .PJX files are in synch with their corresponding
-*!* *-- text file.
-*!* llSuccess = This.RegenerateRepoProjects( @m.toErrorInfo, m.tcRepository, @m.lcFileListAlias, ;
-*!* 		@m.laTimestampList )
 *-- Make sure all binary files are in synch with their corresponding
 *-- text file.
 llSuccess = This.RegenerateRepoBinaries( @m.toErrorInfo, m.tcRepository, @m.lcFileListAlias, ;
 		@m.laTimestampList )
-*!* *} MJP -- 11/26/2016 15:21:35 - End
 
 *-- Make sure the program and object code files for all .MNX menu files
 *-- are updated.
@@ -3455,262 +3170,16 @@ IF m.llSuccess
 			@laTimestampList )
 ENDIF
 
-*{ MJP -- 06/10/2015 01:40:07 PM - Begin
 *-- Restore file timestamps for all repository files, if applicable.
 IF m.llSuccess ;
 		AND This.AreTimestampsPreserved( m.tcRepository )
 	llSuccess = This.RestoreRepoTimestamps( @m.toErrorInfo, m.tcRepository )
 ENDIF
-*} MJP -- 06/10/2015 01:40:07 PM - End
 
 USE IN SELECT( m.lcFileListAlias )
 
 RETURN m.llSuccess
 ENDFUNC
-
-*!* MJP -- Removed 12/03/2016 20:16:11
-*!* *********************************************************************
-*!* FUNCTION RegenerateRepoProjects
-
-*!* *!*	This method regenerates the .PJX files for any project text files committed to the specified
-*!* *!*	Git repository.  The .PJX/.PJT files for a project are typically not committed to a repository,
-*!* *!*	so this method ensures that those binary files are regenerated to match any text file versions
-*!* *!*	which have been checked out.
-
-*!* *!*	PARAMETERS:
-*!* *!*			  toErrorInfo (O) -	A variable passed by reference to store any error info returned from
-*!* *!*								this method.  This will be returned as an Exception object.  This
-*!* *!*								parameter is not required, but recommended.
-*!* *!*			 tcRepository (O) -	The full path to the repository folder where .PJX files are to be
-*!* *!*								regenerated.  If omitted, the current folder will be used as the
-*!* *!*								repository.
-*!* *!*		  tcFileListAlias (O) -	The alias of the cursor containing a list of all the files in the
-*!* *!*								specified repository.  If omitted or there is no cursor open with
-*!* *!*								the specified name, the file list will be retrieved here, and the
-*!* *!*								cursor name stored in this parameter.  The calling code can delegate
-*!* *!*								the task of retrieving the list to this method by passing a variable
-*!* *!*								to this parameter by reference, then it will have access to the
-*!* *!*								cursor afterward.
-*!* *!*		  taTimestampList (O) -	An array variable passed by reference, which is either already
-*!* *!*								populated with timestamp data by This.ReadRepoTimestampFile(), or
-*!* *!*								is to be populated with those values by this method.  If omitted,
-*!* *!*								the timestamp array will still be populated by this method, if
-*!* *!*								applicable.
-
-*!* *!*	RETURNS: Logical
-*!* *!*		.T. if all .PJX files are successfully regenerated, or if there are no project files to
-*!* *!*		regenerate, .F. if an error occurs.
-*!* *********************************************************************
-*!* LPARAMETERS toErrorInfo AS Exception, tcRepository AS String, tcFileListAlias AS String, taTimestampList
-
-*!* EXTERNAL ARRAY taTimestampList
-
-*!* LOCAL laFileList[1], ;
-*!* 	lcFolder, ;
-*!* 	lcFullFileName, ;
-*!* 	lcJustFileName, ;
-*!* 	lcMessage, ;
-*!* 	lcRepository, ;
-*!* 	lcTextExtension, ;
-*!* 	llProjectOpen, ;
-*!* 	llSuccess, ;
-*!* 	lnRow, ;
-*!* 	loFolder AS SHELL.Folder, ;
-*!* 	loPJTItem AS SHELL.FolderItem, ;
-*!* 	loPJXItem AS SHELL.FolderItem, ;
-*!* 	loProject AS VisualFoxpro.IFoxProject, ;
-*!* 	loShell AS Shell.Shell, ;
-*!* 	ltFileTimestamp, ;
-*!* 	xx
-
-*!* *-- Make sure we have a repository name.
-*!* lcRepository = This.GetRepositoryPath( m.tcRepository )
-
-*!* IF VARTYPE( m.tcFileListAlias ) = "C" ;
-*!* 		AND NOT EMPTY( m.tcFileListAlias ) ;
-*!* 		AND USED( m.tcFileListAlias )
-*!* 	*-- The specified cursor is already open, so use it.
-*!* 	llSuccess = .T.
-*!* ELSE
-*!* 	*-- Attempt to retrieve the list of files committed to the specified
-*!* 	*-- repository.
-*!* 	llSuccess = This.FetchRepoFileList( @m.toErrorInfo, m.lcRepository, @m.tcFileListAlias )
-*!* ENDIF
-
-*!* *-- If something failed, or there are no files in this repository,
-*!* *-- there's nothing to do here.
-*!* IF NOT m.llSuccess ;
-*!* 		OR RECCOUNT( m.tcFileListAlias ) = 0
-*!* 	RETURN m.llSuccess
-*!* ENDIF
-
-*!* *-- Determine the extension used for .PJX files in the current repository.
-*!* *-- Note that although each subfolder could use a different extension,
-*!* *-- we will assume you didn't do anything that crazy, and that the
-*!* *-- correct extension can be determined at the repository root level.
-*!* lcTextExtension = This.GetTextExtension( "PJX", m.lcRepository )
-*!* IF m.lcTextExtension == "PJX"
-*!* 	*-- There is no text extension for .PJX files, so either there are
-*!* 	*-- no projects in this repository, or you aren't generating text
-*!* 	*-- files for them.
-*!* 	RETURN m.llSuccess
-*!* ENDIF
-
-*!* *-- Retrieve a list of the text files generated for the .PJX files in
-*!* *-- this repository folder.
-*!* SELECT GL_FileName ;
-*!* 	FROM ( m.tcFileListAlias ) ;
-*!* 	WHERE UPPER( RTRIM( GL_FileExtension ) ) == m.lcTextExtension ;
-*!* 	INTO ARRAY laFileList
-
-*!* *-- There are no text files for .PJX files that are committed to the
-*!* *-- repository, so nothing to do here.
-*!* IF _TALLY = 0
-*!* 	RETURN m.llSuccess
-*!* ENDIF
-
-*!* *{ MJP -- 08/27/2016 05:06:31 PM - Begin
-*!* *-- Make sure the timestamp list parameter is defined as an array.
-*!* IF NOT TYPE( "taTimestampList", 1 ) = "A"
-*!* 	DIMENSION taTimestampList[1]
-*!* 	taTimestampList = .NULL.
-*!* ENDIF
-
-*!* *-- If no timestamp list was specified, and timestamps are preserved
-*!* *-- by this repository, then attempt to get the timestamp list.
-*!* IF ISNULL( taTimestampList[1] ) ;
-*!* 		AND This.AreTimestampsPreserved( m.lcRepository )
-*!* 	*-- Note that we will not abort if we can't get the timestamp list.
-*!* 	This.ReadRepoTimestampFile( @m.toErrorInfo, m.lcRepository, .NULL., @taTimestampList )
-*!* ENDIF
-
-*!* *-- If there are timestamps available, get a Windows shell object to
-*!* *-- set the modification dates.
-*!* IF NOT ISNULL( taTimestampList[1] )
-*!* 	loShell = CREATEOBJECT( "Shell.Application" )
-*!* ENDIF
-*!* *} MJP -- 08/27/2016 05:06:31 PM - End
-
-*!* lcMessage = "Regenerating .PJX files for repository:" + CHR(13) ;
-*!* 		+ m.lcRepository + CHR(13) ;
-*!* 		+ "Regenerating file: "
-
-*!* *-- Regenerate all the project files.
-*!* FOR xx = 1 TO ALEN( laFileList, 1 )
-*!* 	WAIT WINDOW m.lcMessage + laFileList[m.xx] NOWAIT NOCLEAR
-
-*!* 	*{ MJP -- 08/27/2016 05:10:36 PM - Begin
-*!* 	IF ISNULL( taTimestampList[1] )
-*!* 		*-- There are no timestamps available.
-*!* 		lnRow = 0
-*!* 	ELSE
-*!* 		*-- Lookup the timestamp for the current text file.
-*!* 		lnRow = ASCAN( taTimestampList, laFileList[m.xx], 1, -1, 1, 1+2+4+8 )
-*!* 	ENDIF
-
-*!* 	*-- If a timestamp was found for the text file, store it.
-*!* 	ltFileTimestamp = IIF( m.lnRow > 0, taTimestampList[m.lnRow,2], .NULL. )
-*!* 	IF ISNULL( ltFileTimestamp )
-*!* 		*-- Make sure the project file objects are cleared when there
-*!* 		*-- is no timestamp to restore.
-*!* 		loPJXItem = .NULL.
-*!* 		loPJTItem = .NULL.
-*!* 	ELSE
-*!* 		lcJustFileName = JUSTFNAME( laFileList[m.xx] )
-
-*!* 		*-- Get the full folder name and normalize it to backslashes.
-*!* 		lcFolder = ADDBS( m.lcRepository ) + JUSTPATH( CHRTRAN( laFileList[m.xx], "/", "\" ) )
-
-*!* 		*-- Get a shell object reference to the .PJX and .PJT files
-*!* 		*-- that will be generated.
-*!* 		loFolder = m.loShell.NameSpace( m.lcFolder )
-*!* 		loPJXItem = m.loFolder.ParseName( FORCEEXT( m.lcJustFileName, "PJX" ) )
-*!* 		loPJTItem = m.loFolder.ParseName( FORCEEXT( m.lcJustFileName, "PJT" ) )
-
-*!* 		*-- If both the .PJX and .PJT files have the same timestamp as
-*!* 		*-- the text file, assume the project does not need to be regenerated
-*!* 		*-- and skip it.
-*!* 		IF NOT ISNULL( m.loPJXItem ) ;
-*!* 				AND NOT ISNULL( m.loPJTItem ) ;
-*!* 				AND m.loPJXItem.ModifyDate = m.ltFileTimestamp ;
-*!* 				AND m.loPJTItem.ModifyDate = m.ltFileTimestamp
-*!* 			LOOP
-*!* 		ENDIF
-*!* 	ENDIF
-*!* 	*} MJP -- 08/27/2016 05:10:36 PM - End
-
-*!* 	*-- Get the full path of the current file.  Note that FULLPATH()
-*!* 	*-- normalizes any forward slashes (/) in the path to backslashes
-*!* 	*-- (\), which will be important when accessing the Projects collection
-*!* 	*-- below.
-*!* 	lcFullFileName = FULLPATH( ADDBS( m.lcRepository ) + laFileList[m.xx] )
-
-*!* 	llProjectOpen = .F.
-
-*!* 	IF _VFP.Projects.Count > 0
-*!* 		*-- Check if the specified project is open, because we can't
-*!* 		*-- regenerate the project file if it is.
-*!* 		TRY
-*!* 			loProject = _VFP.Projects.Item( FORCEEXT( m.lcFullFileName, "PJX" ) )
-*!* 			llProjectOpen = .T.
-*!* 		CATCH
-*!* 			loProject = .NULL.
-*!* 			llProjectOpen = .F.
-*!* 		ENDTRY
-
-*!* 		*-- If the project was open, close it.
-*!* 		IF NOT ISNULL( m.loProject )
-*!* 			loProject.Close()
-*!* 			loProject = .NULL.
-*!* 		ENDIF
-*!* 	ENDIF
-
-*!* 	*-- Attempt to regenerate the .PJX file.
-*!* 	IF NOT This.ConvertVFPFile( @m.toErrorInfo, m.lcFullFileName, m.lcRepository, .T. )
-*!* 		llSuccess = .F.
-*!* 		EXIT
-*!* 	ENDIF
-
-*!* 	*{ MJP -- 08/27/2016 05:16:09 PM - Begin
-*!* 	IF NOT ISNULL( m.ltFileTimestamp )
-*!* 		*-- We have a timestamp, so attempt to set the modification
-*!* 		*-- date of the generated project files.
-*!* 		*-- If the .PJX file did not exist earlier, then we might not
-*!* 		*-- have a reference to it, so try again to get one now.
-*!* 		IF ISNULL( m.loPJXItem )
-*!* 			loPJXItem = m.loFolder.ParseName( FORCEEXT( m.lcJustFileName, "PJX" ) )
-*!* 		ENDIF
-
-*!* 		*-- If we have a reference to the .PJX file, set the modification
-*!* 		*-- timestamp of the .PJX file to match the text file.
-*!* 		IF NOT ISNULL( m.loPJXItem )
-*!* 			loPJXItem.ModifyDate = m.ltFileTimestamp
-*!* 		ENDIF
-
-*!* 		*-- If the .PJT file did not exist earlier, then we might not
-*!* 		*-- have a reference to it, so try again to get one now.
-*!* 		IF ISNULL( m.loPJTItem )
-*!* 			loPJTItem = m.loFolder.ParseName( FORCEEXT( m.lcJustFileName, "PJT" ) )
-*!* 		ENDIF
-
-*!* 		*-- If we have a reference to the .PJT file, set the modification
-*!* 		*-- timestamp of the .PJT file to match the text file.
-*!* 		IF NOT ISNULL( m.loPJTItem )
-*!* 			loPJTItem.ModifyDate = m.ltFileTimestamp
-*!* 		ENDIF
-*!* 	ENDIF
-*!* 	*} MJP -- 08/27/2016 05:16:09 PM - End
-
-*!* 	*-- If the project was open, re-open it.
-*!* 	IF m.llProjectOpen
-*!* 		MODIFY PROJECT ( FORCEEXT( m.lcFullFileName, "PJX" ) ) NOWAIT
-*!* 	ENDIF
-*!* ENDFOR
-
-*!* WAIT CLEAR
-
-*!* RETURN m.llSuccess
-*!* ENDFUNC
 
 *********************************************************************
 FUNCTION RegenerateRepoBinaries
@@ -3774,7 +3243,6 @@ LOCAL laBinaryFileList[1], ;
 
 EXTERNAL ARRAY taTimestampList
 
-*-- MJP -- 12/27/2016 11:12:57 AM
 *-- Since this method isn't protected, and could be called directly,
 *-- make sure all projects are closed before processing.
 loProjects = CREATEOBJECT( "colPushPopProjects" )
@@ -3843,13 +3311,6 @@ lnBinaryTypeCount = GETWORDCOUNT( m.lcVFPExtensionProcessingOrder, "," )
 *-- Process each type of binary file.
 FOR lnFileType = 1 TO m.lnBinaryTypeCount
 	lcBinaryExtension = GETWORDNUM( m.lcVFPExtensionProcessingOrder, m.lnFileType, "," )
-
-	*!* MJP -- Removed 11/26/2016 19:39:47
-	*-- If the progress bar is loaded when running FoxBin2Prg processes,
-	*-- FoxBin2Prg seems to take over the message displayed for the 1st
-	*-- progress bar, and takes over the 2nd progress bar completely.
-	*!* lcMessage = "Regenerating ." + m.lcBinaryExtension + " files for repository: " + m.lcRepository
-	*!* This.UpdateProgressBar( m.lcMessage, m.lnFileType, m.lnBinaryTypeCount, 1 )
 
 	*-- Determine the text extension used for binary files in the current
 	*-- repository.  Note that although each subfolder could use a
@@ -4002,18 +3463,6 @@ FOR lnFileType = 1 TO m.lnBinaryTypeCount
 		*-- collection below.
 		lcFullFileName = FULLPATH( ADDBS( m.lcRepository ) + laTextFileList[m.xx] )
 
-		*!* MJP -- Removed 12/27/2016 11:09:28
-		*-- All projects should be closed before this method is called,
-		*-- so this code isn't needed.
-		*!* llProjectOpen = .F.
-
-		*!* *-- If project files are being generated, check if the specified
-		*!* *-- project is open, because we can't regenerate the project
-		*!* *-- file if it is.
-		*!* IF m.lcBinaryExtension == "PJX"
-		*!* 	llProjectOpen = This.CloseProject( FORCEEXT( m.lcFullFileName, "PJX" ) )
-		*!* ENDIF
-
 		*-- Attempt to regenerate the binary files.
 		IF NOT This.ConvertVFPFile( @m.toErrorInfo, m.lcFullFileName, m.lcRepository, .T. )
 			llSuccess = .F.
@@ -4041,13 +3490,6 @@ FOR lnFileType = 1 TO m.lnBinaryTypeCount
 				ENDIF
 			ENDFOR
 		ENDIF
-
-		*!* MJP -- Removed 12/27/2016 11:10:27
-		*!* *-- If project files were generated and the project was open,
-		*!* *-- re-open it.
-		*!* IF m.llProjectOpen
-		*!* 	MODIFY PROJECT ( FORCEEXT( m.lcFullFileName, "PJX" ) ) NOWAIT
-		*!* ENDIF
 	ENDFOR	&& xx = 1 TO ALEN( laTextFileList, 1 )
 
 	*-- If something failed in the file processing, abort the rest of
@@ -4658,12 +4100,6 @@ LPARAMETERS tcFunctionName AS String
 LOCAL laDLLs[1], ;
 	lnRow
 
-*!* MJP -- Removed 05/06/2015 17:19:03
-*!* *-- Call the VMP function that performs this task.  If this class is
-*!* *-- distributed publicly, this method can be updated with equivalent
-*!* *-- code to perform the same task.
-*!* RETURN X7ISAPIF( m.tcFunctionName )
-
 *-- Get a list of all DECLAREd DLLs, and if there aren't any, then the
 *-- specified DLL function is not DECLAREd.
 IF ADLLS( laDLLs ) = 0
@@ -4693,12 +4129,6 @@ LPARAMETERS tcSQL AS String
 LOCAL laLines[1], ;
 	lcLine, ;
 	lcSQL
-
-*!* MJP -- Removed 05/06/2015 16:59:29
-*!* *-- Call the VMP function that performs this task.  If this class is
-*!* *-- distributed publicly, this method can be updated with equivalent
-*!* *-- code to perform the same task.
-*!* lcSQL = X7RemoveCRLFTAB( m.tcSQL, .T., ";" )
 
 lcSQL = SPACE(0)
 
@@ -4778,9 +4208,6 @@ LOCAL lcFileName, ;
 	lcRepoType
 
 *-- Check the file name, and use the default if nothing was specified.
-*!* *{ MJP -- 06/24/2016 15:27:42 - Begin
-*!* lcFileName = IIF( VARTYPE( m.tcFileName ) = "C" AND NOT EMPTY( m.tcFileName ), ;
-*!* 		ALLTRIM( m.tcFileName ), This.icGitTimestampFilename )
 IF VARTYPE( m.tcFileName ) = "C" ;
 		AND NOT EMPTY( m.tcFileName )
 	lcFileName = ALLTRIM( m.tcFileName )
@@ -4790,7 +4217,6 @@ ELSE
 	lcRepoType = This.GetRepoType( m.tcRepository )
 	lcFileName = IIF( m.lcRepoType = "M", This.icHgTimestampFilename, This.icGitTimestampFilename )
 ENDIF
-*!* *} MJP -- 06/24/2016 15:27:42 - End
 
 *-- Make sure the name does not include any path info.
 lcFileName = JUSTFNAME( m.lcFileName )
@@ -4842,9 +4268,6 @@ RETURN m.llSaveTimestamps
 ENDFUNC
 
 *********************************************************************
-*-- MJP -- 02/13/2015 11:51:35 AM
-*-- Allow access to this method outside of the class.
-*!*	PROTECTED FUNCTION GetProjectName
 FUNCTION GetProjectName
 
 *!*	Validates a specified project file name, or attempts to determine the name of the project to
@@ -5481,12 +4904,10 @@ TRY
 
 	lcErrorMessage = SPACE(0)
 
-	*{ MJP -- 06/24/2016 03:02:07 PM - Begin
 	*-- Determine the type of repository being processed, and set the
 	*-- corresponding add command to use.
 	lcRepoType = This.GetRepoType( m.tcRepository )
 	lcAddCommand = IIF( m.lcRepoType = "M", "hg add", "git add" )
-	*} MJP -- 06/24/2016 03:02:07 PM - End
 
 	*-- Check all the primary files that are being tracked.
 	SELECT ( m.lcTrackedBinAlias )
@@ -5542,12 +4963,8 @@ TRY
 				loErrorInfo = .NULL.
 				*-- This file belongs with a main file that is being
 				*-- tracked, so attempt to add it.
-				*!* *{ MJP -- 06/24/2016 15:06:12 - Begin
-				*!* IF NOT This.ExecuteCommand( @m.loErrorInfo, m.tcRepository, "git add " ;
-				*!* 		+ EVALUATE( m.lcUntrackedAlias + ".GS_FileName" ) )
 				IF NOT This.ExecuteCommand( @m.loErrorInfo, m.tcRepository, m.lcAddCommand + SPACE(1) ;
 						+ EVALUATE( m.lcUntrackedAlias + ".GS_FileName" ) )
-				*!* *} MJP -- 06/24/2016 15:06:12 - End
 					*-- When an add fails, log the error, but continue
 					*-- processing so we add as many files as possible.
 					lcErrorMessage = m.lcErrorMessage + "Unable to add '" ;
@@ -5935,13 +5352,10 @@ This.iaAlternateText[1,1] = m.lcRepository
 This.iaAlternateText[1,2] = .NULL.
 
 *-- Look for the mapping file.  If it doesn't exist, we're done.
-*!* *{ MJP -- 06/25/2016 13:59:56 - Begin
-*!* lcAlternateTextFilename = m.lcRepository + This.icGitAlternateTextFilename
 *-- The mapping file name depends on the type of repository.
 lcRepoType = This.GetRepoType( m.lcRepository )
 lcAlternateTextFilename = m.lcRepository + IIF( m.lcRepoType = "M", ;
 		This.icHgAlternateTextFilename, This.icGitAlternateTextFilename )
-*!* *} MJP -- 06/25/2016 13:59:56 - End
 IF NOT FILE( m.lcAlternateTextFilename )
 	RETURN
 ENDIF
@@ -6124,7 +5538,6 @@ tcFileName = ALLTRIM( m.tcFileName )
 *-- as well as the main file.
 lcMainExtension = This.GetMainBinaryExtension( JUSTEXT( m.tcFileName ) )
 
-*{ MJP -- 06/25/2016 03:40:28 PM - Begin
 IF LOWER( GETWORDNUM( m.tcCommand, 1 ) ) = "git"
 	*-- For Git commands, the file mask needs to be surrounded by quotes
 	*-- and preceeded with a double-dash.
@@ -6135,16 +5548,12 @@ ELSE
 	lcBeginDelim = SPACE(1)
 	lcEndDelim = SPACE(0)
 ENDIF
-*} MJP -- 06/25/2016 03:40:28 PM - End
 
 DO CASE
 	CASE ( "|" + m.lcMainExtension + "|" ) $ "|VCX|SCX|FRX|LBX|MNX|PJX|"
 		*-- These file types all have a single companion file whose
 		*-- extension begins with the same first 2 letters, and ends
 		*-- in "T", so we handle all of them using the same formula.
-		*!* *{ MJP -- 06/04/2015 08:38:38 - Begin
-		*!* llSuccess = This.ExecuteCommand( @m.toErrorInfo, .NULL., m.tcCommand + ' -- "' ;
-		*!* 		+ LEFT( m.tcFileName, LENC( m.tcFileName ) - 1 ) + '[TtXx]"' )
 		*-- In general, the main file and its memo file use the same
 		*-- case for their extensions, however, I ran into a couple
 		*-- cases where the extension of one file was uppercase and
@@ -6157,7 +5566,6 @@ DO CASE
 
 		llSuccess = This.ExecuteCommand( @m.toErrorInfo, .NULL., m.tcCommand + m.lcBeginDelim ;
 				+ LEFT( m.tcFileName, LENC( m.tcFileName ) - 3 ) + m.lcExtensionExpr + m.lcEndDelim )
-		*!* *} MJP -- 06/04/2015 08:38:38 - End
 
 	CASE m.lcMainExtension = "DBC"
 		*-- The .DBC is a set of 3 files with a little different naming
@@ -6262,11 +5670,9 @@ IF ISNULL( m.loConverter )
 	RETURN
 ENDIF
 
-*{ MJP -- 02/25/2017 08:43:04 PM - Begin
 *-- The progress form will not refresh properly if the AutoYield setting
 *-- is false, so make sure it's turned on before the form is loaded.
 _VFP.AutoYield = .T.
-*} MJP -- 02/25/2017 08:43:04 PM - End
 
 *-- Load the progress form.
 loConverter.LoadProgressBarForm()
@@ -6753,25 +6159,6 @@ ENDPROC
 
 ENDDEFINE
 
-
-*-- Option classes need to be defined locally, so it doesn't help to
-*-- define them here.
-*!*	*********************************************************************
-*!*	*-- Define master option classes.
-*!*	*********************************************************************
-*!*	DEFINE CLASS ccOptionClassPreserveTS AS Custom
-*!*		Tool = ccToolName
-*!*		Key = ccKeyPreserveTimestamps
-*!*		Value = ccInitialValuePreserveTS
-*!*		EditClassName = [ccEditClassName from Thor_Proc_GitUtilities.PRG]
-*!*	ENDDEFINE
-
-*!*	DEFINE CLASS ccOptionClassTSFileName AS Custom
-*!*		Tool = ccToolName
-*!*		Key = ccKeyTimestampFileName
-*!*		Value = ccInitialValueTSFileName
-*!*		EditClassName = [ccEditClassName from Thor_Proc_GitUtilities.PRG]
-*!*	ENDDEFINE
 
 *********************************************************************
 *-- Define the option page for all the Git utilities options.

@@ -34,10 +34,9 @@ If the beta installer already exists, you will be prompted to remove it, so it n
 		.Sort		   = 6 && the sort order for all items from the same Source, Category and Sub-Category
 
 		* For public tools, such as PEM Editor, etc.
-		.Version	   = '2017.03.18' && e.g., 'Version 7, May 18, 2011'
+		.Version	   = '2018.05.17' && e.g., 'Version 7, May 18, 2011'
 		.Author        = 'Mike Potjer'
-		*!* .Link          = 'https://github.com/mikepotjer/vfp-git-utils'	&& 'http://www.optimalinternet.com/' && link to a page for this tool
-		.Link          = 'https://bitbucket.org/mikepotjer/vfp-git-utils'	&& 'http://www.optimalinternet.com/' && link to a page for this tool
+		.Link          = 'https://github.com/mikepotjer/vfp-git-utils'	&& link to a page for this tool
 		.VideoLink     = '' && link to a video for this tool
 
 	ENDWITH
@@ -78,7 +77,7 @@ WITH loUpdateObject
     .Component            = 'No'
     .ToolName             = 'Thor_Tool_ThorInternalRepository'
     .VersionLocalFilename = 'GitUtilitiesVersionFile-Beta.txt'
-	.VersionFileURL       = 'https://bitbucket.org/mikepotjer/vfp-git-utils/downloads/GitUtilitiesVersionFile-Beta.txt'
+	.VersionFileURL       = 'https://raw.githubusercontent.com/mikepotjer/vfp-git-utils/beta/ThorUpdater/GitUtilitiesVersionFile-Beta.txt'
 ENDWITH
 
 RETURN loUpdateObject

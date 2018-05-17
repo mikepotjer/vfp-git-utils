@@ -225,11 +225,11 @@ files from the project, the branch that is currently checked out for each projec
 about any changes or conflicts for each repository.  A type field indicates whether each repository
 is a Git (G) or Mercurial (M) repository.
 
-[Git-tools-history]: https://bitbucket.org/mikepotjer/vfp-git-utils/src/master/GitUtilitiesVersionFile.txt
+[Git-tools-history]: https://raw.githubusercontent.com/mikepotjer/vfp-git-utils/beta/ThorUpdater/GitUtilitiesVersionFile-Beta.txt
 [FoxProThor-Google-group]: https://groups.google.com/forum/?fromgroups#!forum/FoxProThor
-[Thor-homepage]: http://vfpx.codeplex.com/wikipage?title=Thor
-[FoxBin2Prg-homepage]: http://vfpx.codeplex.com/wikipage?title=FoxBin2Prg
-[Git-Windows-download]: http://git-scm.com/download/win
+[Thor-homepage]: https://github.com/VFPX/Thor
+[FoxBin2Prg-homepage]: https://github.com/fdbozzo/foxbin2prg
+[Git-Windows-download]: https://git-scm.com/download/win
 [Mercurial-Windows-download]: https://www.mercurial-scm.org/downloads
 [Git-setup-guide]: https://drive.google.com/file/d/0B1GXcfuc1fBubFpUS2VmSVNpUEk/view?usp=sharing
 [Borup-whitepapers]: http://www.ita-software.com/foxpage.aspx
