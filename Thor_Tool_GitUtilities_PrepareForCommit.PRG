@@ -38,8 +38,7 @@ This tool requires Git for Windows or Mercurial for Windows, FoxBin2Prg, and som
 		* For public tools, such as PEM Editor, etc.
 		.Version	   = '2016.12.09' && e.g., 'Version 7, May 18, 2011'
 		.Author        = 'Mike Potjer'
-		*!* .Link          = 'https://github.com/mikepotjer/vfp-git-utils'	&& 'http://www.optimalinternet.com/' && link to a page for this tool
-		.Link          = 'https://bitbucket.org/mikepotjer/vfp-git-utils'	&& 'http://www.optimalinternet.com/' && link to a page for this tool
+		.Link          = 'https://github.com/mikepotjer/vfp-git-utils'	&& link to a page for this tool
 		.VideoLink     = '' && link to a video for this tool
 
 		.OptionTool    = ccToolName
