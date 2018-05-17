@@ -159,7 +159,6 @@ DEFINE CLASS clsGitTimestampFileName AS Custom
 	EditClassName = [ccEditClassName of Thor_Proc_GitUtilities.PRG]
 ENDDEFINE
 
-*-- MJP -- 06/24/2016 04:24:39 PM
 DEFINE CLASS clsHgTimestampFileName AS Custom
 	Tool = ccToolName
 	Key = ccKeyHgTimestampFileName
