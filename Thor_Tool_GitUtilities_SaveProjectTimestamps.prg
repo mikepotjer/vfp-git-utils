@@ -35,8 +35,7 @@ This tool requires Git for Windows or Mercurial for Windows and some Thor Reposi
 		* For public tools, such as PEM Editor, etc.
 		.Version	   = '2016.12.09' && e.g., 'Version 7, May 18, 2011'
 		.Author        = 'Mike Potjer'
-		*!* .Link          = 'https://github.com/mikepotjer/vfp-git-utils'	&& 'http://www.optimalinternet.com/' && link to a page for this tool
-		.Link          = 'https://bitbucket.org/mikepotjer/vfp-git-utils'	&& 'http://www.optimalinternet.com/' && link to a page for this tool
+		.Link          = 'https://github.com/mikepotjer/vfp-git-utils'	&& link to a page for this tool
 		.VideoLink     = '' && link to a video for this tool
 
 		.OptionTool    = ccToolName
@@ -150,7 +149,6 @@ DEFINE CLASS clsGitTimestampFileName AS Custom
 	EditClassName = [ccEditClassName of Thor_Proc_GitUtilities.PRG]
 ENDDEFINE
 
-*-- MJP -- 06/24/2016 04:24:39 PM
 DEFINE CLASS clsHgTimestampFileName AS Custom
 	Tool = ccToolName
 	Key = ccKeyHgTimestampFileName
