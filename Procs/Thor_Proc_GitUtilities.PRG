@@ -674,11 +674,9 @@ FUNCTION IsFileInRepo
 LPARAMETERS toErrorInfo AS Exception, tcFilePath AS String, tlCheckTextFile AS Boolean, tcRepository AS String
 
 LOCAL laRepoFiles[1], ;
-	lcFileExtension, ;
 	lcFolderPath, ;
 	lcLookupFileName, ;
 	lcRepoPath, ;
-	lcTextExtension, ;
 	llIsInRepo
 
 llIsInRepo = .F.
@@ -1569,7 +1567,6 @@ FUNCTION CleanupVFPBinaries
 LPARAMETERS toErrorInfo AS Exception, tcFileListAlias AS String, tcRepository AS String
 
 LOCAL lcDefaultPath, ;
-	lcFullFileName, ;
 	lcMainFileName, ;
 	lcMessage, ;
 	lcRelativeFileName, ;
@@ -2071,46 +2068,6 @@ RETURN m.llSuccess
 ENDFUNC
 
 *********************************************************************
-PROTECTED FUNCTION CloseProject
-
-*!*	This method checks if the specified project file is open, and attempts to close it if it is.
-
-*!*	PARAMETERS:
-*!*		tcProjectName (R) -	The project file to close.
-
-*!*	RETURNS: Logical
-*!*		.T. if the project file was open and could be closed.  .F. otherwise.
-*********************************************************************
-LPARAMETERS tcProjectFileName AS String
-
-LOCAL llProjectOpen, ;
-	loProject AS VisualFoxpro.IFoxProject
-
-llProjectOpen = .F.
-
-*-- If a project text file is being generated, or the project binaries
-*-- are being updated, check if the specified project is open, because
-*-- we can't makes updates if it is.
-IF _VFP.Projects.Count > 0
-	TRY
-		loProject = _VFP.Projects.Item( m.tcProjectFileName )
-		llProjectOpen = .T.
-	CATCH
-		loProject = .NULL.
-		llProjectOpen = .F.
-	ENDTRY
-
-	*-- If the project was open, close it.
-	IF NOT ISNULL( m.loProject )
-		loProject.Close()
-		loProject = .NULL.
-	ENDIF
-ENDIF
-
-RETURN m.llProjectOpen
-ENDFUNC
-
-*********************************************************************
 FUNCTION BinaryToTextProjectFile
 
 *!*	This method generates the text file for the specified VFP project file.
@@ -2128,9 +2085,8 @@ FUNCTION BinaryToTextProjectFile
 LPARAMETERS toErrorInfo AS Exception, tcProjectName AS String
 
 LOCAL lcProjectName, ;
-	llProjectOpen, ;
 	llSuccess, ;
-	loProject AS VisualFoxpro.IFoxProject
+	loProjects
 
 *-- Make sure we have the full path to the project to process.  If the
 *-- project cannot be determined, abort.
@@ -2146,15 +2102,10 @@ llSuccess = .T.
 *-- Ordinarily, all projects will now be closed before this method is
 *-- called, but this method is not protected, so it could conceivably
 *-- be called in a context where the project file is still open.
-llProjectOpen = This.CloseProject( m.lcProjectName )
+loProjects = CREATEOBJECT( "colPushPopProjects" )
 
 *-- Generate the text file for the project.
 llSuccess = This.ConvertVFPFile( @m.toErrorInfo, m.lcProjectName )
-
-*-- If the project was open, re-open it.
-IF m.llProjectOpen
-	MODIFY PROJECT ( m.lcProjectName ) NOWAIT
-ENDIF
 
 RETURN m.llSuccess
 ENDFUNC
@@ -5222,8 +5173,7 @@ LPARAMETERS tcBinaryFilename AS String, tcRepository AS String
 
 LOCAL lcFilePath, ;
 	lcTextExtension, ;
-	lcTextFilename, ;
-	loConverter AS C_FoxBin2Prg OF "C:\Work\VFP\Shared\Tools\Thor\Tools\Components\FoxBin2Prg\FoxBin2Prg.PRG"
+	lcTextFilename
 
 *-- First check if the specified binary file uses an alternate text
 *-- file.
@@ -6016,9 +5966,18 @@ PROCEDURE Init
 *********************************************************************
 LOCAL xx
 
+*-- Don't even instantiate this class when there are no projects open.
+IF _VFP.Projects.Count = 0
+	RETURN .F.
+ENDIF
+
+*-- If the Project Explorer is being used, it manages its own projects,
+*-- so close those projects first.
+This.CloseProjectExplorerProjects()
+
+*-- If there are still projects open, they must have been opened directly.
 IF _VFP.Projects.Count > 0
-	*-- There are projects open.  Store the name of the active project
-	*-- before doing anything else.
+	*-- Store the name of the active project before doing anything else.
 	This.icActiveProject = _VFP.ActiveProject.Name
 
 	*-- Store the names of all the open projects.
@@ -6038,6 +5997,31 @@ PROCEDURE Destroy
 *-- Attempt to reopen any projects that were open when this class was
 *-- instantiated.
 This.OpenAllProjects()
+
+ENDPROC
+
+*********************************************************************
+PROCEDURE CloseProjectExplorerProjects
+
+*!*	This method attempts to close all project files that are currently open for a Project Explorer
+*!*	solution.
+
+*!*	PARAMETERS: None
+
+*!*	RETURNS: Nothing
+*********************************************************************
+LOCAL loExplorer
+
+*-- Check if there are any Project Explorer instances loaded.
+IF NOT VARTYPE( _SCREEN.oProjectExplorers ) = "O" ;
+		OR _SCREEN.oProjectExplorers.Count = 0
+	RETURN
+ENDIF
+
+*-- Close the projects for all solutions that are currently open.
+FOR EACH loExplorer IN _SCREEN.oProjectExplorers FOXOBJECT
+	loExplorer.oSolution.CloseProjects()
+ENDFOR
 
 ENDPROC
 
@@ -6105,6 +6089,30 @@ ENDFOR
 ENDPROC
 
 *********************************************************************
+PROCEDURE OpenProjectExplorerProjects
+
+*!*	This method attempts to reopen all project files that are managed by Project Explorer instances.
+
+*!*	PARAMETERS: None
+
+*!*	RETURNS: Nothing
+*********************************************************************
+LOCAL loExplorer
+
+*-- Check if there are any Project Explorer instances loaded.
+IF NOT VARTYPE( _SCREEN.oProjectExplorers ) = "O" ;
+		OR _SCREEN.oProjectExplorers.Count = 0
+	RETURN
+ENDIF
+
+*-- Open the projects for all solutions.
+FOR EACH loExplorer IN _SCREEN.oProjectExplorers FOXOBJECT
+	loExplorer.oSolution.OpenProjects()
+ENDFOR
+
+ENDPROC
+
+*********************************************************************
 PROCEDURE OpenProject
 
 *!*	This method attempts to open a specified project file.
@@ -6138,8 +6146,11 @@ PROCEDURE OpenAllProjects
 LOCAL lcProjectName, ;
 	xx
 
+*-- Attempt to reopen any projects used by Project Explorer instances.
+This.OpenProjectExplorerProjects()
+
 *-- Check if this class has any items stored, otherwise there is nothing
-*-- to do here.
+*-- more to do here.
 IF This.Count = 0
 	RETURN
 ENDIF

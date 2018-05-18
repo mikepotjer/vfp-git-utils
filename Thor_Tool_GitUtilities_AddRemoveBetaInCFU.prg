@@ -34,7 +34,7 @@ If the beta installer already exists, you will be prompted to remove it, so it n
 		.Sort		   = 6 && the sort order for all items from the same Source, Category and Sub-Category
 
 		* For public tools, such as PEM Editor, etc.
-		.Version	   = '2018.05.17' && e.g., 'Version 7, May 18, 2011'
+		.Version	   = '2018.05.18' && e.g., 'Version 7, May 18, 2011'
 		.Author        = 'Mike Potjer'
 		.Link          = 'https://github.com/mikepotjer/vfp-git-utils'	&& link to a page for this tool
 		.VideoLink     = '' && link to a video for this tool
@@ -59,7 +59,8 @@ RETURN
 PROCEDURE ToolCode
 LPARAMETERS lxParam1
 
-LOCAL lcFileName, ;
+LOCAL lcFileContent, ;
+	lcFileName, ;
 	lcGitUtilsBetaInstall, ;
 	lcToolFolder, ;
 	llSuccess, ;
@@ -88,6 +89,16 @@ ENDTEXT
 *-- file name to use for the beta install.
 lcToolFolder = EXECSCRIPT( _Screen.cThorDispatcher, 'Tool Folder=' )
 lcFileName = ADDBS( m.lcToolFolder ) + 'Updates\My Updates\Thor_Update_Git-Utils-Beta.prg'
+
+IF FILE( m.lcFileName )
+	*-- If the install file exists, but it's content doesn't match the
+	*-- current installer settings, then delete it, because there's a
+	*-- good chance it no longer works.
+	lcFileContent = FILETOSTR( m.lcFileName )
+	IF NOT m.lcFileContent == m.lcGitUtilsBetaInstall
+		ERASE ( m.lcFileName )
+	ENDIF
+ENDIF
 
 IF FILE( m.lcFileName )
 	*-- The install file already exists, so give the user the option
