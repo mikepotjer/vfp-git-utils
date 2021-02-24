@@ -1,4 +1,6 @@
 #IF .F.
+** TF 02/2021 Modified FetchReposInProject to exclude deleted records from the project file.
+
 *-------------------------------------------------------
 *---------------- FILE CREATION INFO -------------------
 Program....: THOR_PROC_GITUTILITIES
@@ -301,7 +303,7 @@ LOCAL lcCommand, ;
 
 llSuccess = .T.
 tcOutput = SPACE(0)
-
+**SET STEP ON 
 loShell = CREATEOBJECT( "WScript.Shell" )
 
 *-- If a repository was specified, make sure it is set as the new current
@@ -321,7 +323,6 @@ lcOutputFile = ADDBS( SYS(2023) ) + "Output" + SYS(2015) + ".TXT"
 *-- The command is also modified to direct the output of the command
 *-- to a file.
 lcCommand = "%comspec% /c " + m.tcCommand + [ > "] + m.lcOutputFile + ["]
-
 TRY
 	*-- There is no easy way to hide the command window using Exec(),
 	*-- and possibly no way at all to hide it from VFP, so the Run()
@@ -1208,7 +1209,11 @@ LOCAL lcBranchName, ;
 	lcRepoType, ;
 	lcSQL, ;
 	llSuccess, ;
-	loRepoStatistics
+	loRepoStatistics, lcSetDeleted
+
+** TF 02/2021 Added SET DELETED ON so that deleted records in the project file are excluded.
+m.lcSetDeleted =SET("Deleted") && Save prior state (to be restored at end of function)
+SET DELETED ON 
 
 llSuccess = .T.
 
@@ -1358,6 +1363,11 @@ ENDIF
 *-- We're done with these cursors, so clean up.
 USE IN SELECT( m.lcProjectAlias )
 USE IN SELECT( m.lcProjectFoldersAlias )
+
+** TF 02/2021 Restore SET DELETED state to OFF if that was its prior setting.
+IF m.lcSetDeleted ="OFF"
+ SET DELETED OFF
+ENDIF && m.lcSetDeleted ="OFF"
 
 RETURN m.llSuccess
 ENDFUNC
