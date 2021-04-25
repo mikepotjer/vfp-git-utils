@@ -1198,7 +1198,8 @@ FUNCTION FetchReposInProject
 *********************************************************************
 LPARAMETERS toErrorInfo AS Exception, tcProjectName AS String, tcCursorName AS String
 
-LOCAL lcBranchName, ;
+LOCAL lcAliasRoot, ;
+	lcBranchName, ;
 	lcCommand, ;
 	lcFolderPath, ;
 	lcProjectAlias, ;
@@ -1225,8 +1226,9 @@ ELSE
 	tcProjectName = m.lcProjectName
 ENDIF
 
-lcProjectAlias = JUSTSTEM( m.lcProjectName ) + "_PJX" + SYS(2015)
-lcProjectFoldersAlias = JUSTSTEM( m.lcProjectName ) + "_Folders" + SYS(2015)
+lcAliasRoot = CHRTRANC( JUSTSTEM( m.lcProjectName ), SPACE(1), "_" )
+lcProjectAlias = m.lcAliasRoot + "_PJX" + SYS(2015)
+lcProjectFoldersAlias = m.lcAliasRoot + "_Folders" + SYS(2015)
 
 *-- Generate the query to retrieve all the data paths represented in
 *-- the specified project.
@@ -4459,7 +4461,8 @@ PROTECTED FUNCTION GenerateMenuCode
 *********************************************************************
 LPARAMETERS toErrorInfo AS Exception, tcMenuFile AS String
 
-LOCAL lcMenuFile, ;
+LOCAL lcMenuCodeFile, ;
+	lcMenuFile, ;
 	lcProjectAlias, ;
 	lcTempProjectName, ;
 	llSuccess, ;
@@ -4538,10 +4541,16 @@ TRY
 	*-- We're done with the cursor, so attempt to close it.
 	USE IN SELECT( m.lcProjectAlias )
 
-	*-- We finally have everything we need to call the VFP menu generation
-	*-- program.
+	* We finally have everything we need to call the VFP menu generation
+	* program.
 	DO ( _GenMenu ) WITH m.lcTempProjectName + ".PJX", m.lnMenuRecNo
 
+	* Make sure the code file is compiled.
+	lcMenuCodeFile = FORCEEXT( m.tcMenuFile, "MPR" )
+	IF FILE( m.lcMenuCodeFile )
+		COMPILE ( m.lcMenuCodeFile )
+	ENDIF
+	
 	llSuccess = .T.
 
 CATCH TO toErrorInfo

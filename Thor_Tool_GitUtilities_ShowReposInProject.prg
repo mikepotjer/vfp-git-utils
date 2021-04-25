@@ -32,7 +32,7 @@ This tool requires Git for Windows or Mercurial for Windows and some Thor Reposi
 		.Sort		   = 3 && the sort order for all items from the same Source, Category and Sub-Category
 
 		* For public tools, such as PEM Editor, etc.
-		.Version	   = '2016.06.24' && e.g., 'Version 7, May 18, 2011'
+		.Version	   = '2021.04.24' && e.g., 'Version 7, May 18, 2011'
 		.Author        = 'Mike Potjer'
 		.Link          = 'https://github.com/mikepotjer/vfp-git-utils'	&& link to a page for this tool
 		.VideoLink     = '' && link to a video for this tool
@@ -82,9 +82,9 @@ IF m.llSuccess
 ENDIF
 
 IF m.llSuccess
-	*-- Use the project name in the alias name for the cursor, then
-	*-- attempt to retrieve the list of repositories.
-	lcAlias = "Repositories_For_" + JUSTSTEM( m.lcProjectName ) + "_PJX"
+	* Use the project name in the alias name for the cursor, then attempt
+	* to retrieve the list of repositories.
+	lcAlias = "Repositories_For_" + CHRTRANC( JUSTSTEM( m.lcProjectName ), " ", "_" ) + "_PJX"
 	llSuccess = m.loGitUtilities.FetchReposInProject( @m.loErrorInfo, m.lcProjectName, m.lcAlias )
 ENDIF
 
